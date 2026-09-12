@@ -10,6 +10,7 @@ export const SLOT_ORDER: Record<SlotId, number> = { m: 0, d: 1, e: 2 }
 
 export const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const DOWF = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье']
+const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 const MONG = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -74,6 +75,13 @@ export function dayOf(key: string): Day {
 export function weekLabel(offset: number, weeks = 1): string {
   const a = weekDays(offset)[0], b = weekDays(offset + weeks - 1)[6]
   return a.mong === b.mong ? `${a.num}–${b.num} ${a.mong}` : `${a.num} ${a.mong} – ${b.num} ${b.mong}`
+}
+
+/** Короткая подпись недели для узких мест: «28 сен – 4 окт». */
+export function weekLabelShort(offset: number): string {
+  const a = weekDays(offset)[0], b = weekDays(offset)[6]
+  const ma = MON[parseKey(a.key).getMonth()], mb = MON[parseKey(b.key).getMonth()]
+  return ma === mb ? `${a.num}–${b.num} ${ma}` : `${a.num} ${ma} – ${b.num} ${mb}`
 }
 
 export function fmtDay(key: string): string {

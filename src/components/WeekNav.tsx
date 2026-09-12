@@ -1,4 +1,4 @@
-import { weekLabel } from '../lib/dates'
+import { weekLabelShort } from '../lib/dates'
 import { useStore } from '../lib/store'
 
 /** Стрелки недели для заголовка карточки. */
@@ -7,7 +7,7 @@ export function WeekNav() {
   return (
     <span className="wknav">
       <button type="button" aria-label="Предыдущая неделя" disabled={week <= 0} onClick={() => setWeek(week - 1)}>‹</button>
-      <small>{weekLabel(week)}</small>
+      <small>{weekLabelShort(week)}</small>
       <button type="button" aria-label="Следующая неделя" disabled={week >= 3} onClick={() => setWeek(week + 1)}>›</button>
     </span>
   )
