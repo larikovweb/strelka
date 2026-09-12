@@ -2,6 +2,7 @@ import { DOW, SLOT, SLOTS, fmtDayLong, slotPast, weekDays, weekLabel } from '../
 import { entry } from '../lib/model'
 import { useReady } from '../lib/store'
 import { WeekTabs } from '../components/WeekTabs'
+import { GatheringBanner } from '../components/GatheringBanner'
 
 const ICON = { recurring: '↻', oneoff: '✈', shift: '⇄' } as const
 
@@ -17,6 +18,7 @@ export function Schedule() {
     <>
       <header className="head"><h1>Моё расписание<small>отмечай, когда занят — остальные увидят сразу</small></h1></header>
       <WeekTabs />
+      <GatheringBanner where="sched" />
       <div className="sched">
         <article className="card">
           <h2>Быстро по неделе<small>{weekLabel(week)} · тап — занят / свободен</small></h2>

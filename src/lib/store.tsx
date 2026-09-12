@@ -62,7 +62,9 @@ interface Store {
   saveRule(rule: Omit<Rule, 'id'> & { id?: string }): Promise<void>
   deleteRule(id: string): Promise<void>
   updatePerson(name: string, color: string, note: string | null): Promise<void>
-  gather(note: string): Promise<void>
+  gather(note: string, weekOffset: number, weeks: number): Promise<void>
+  respond(): Promise<void>
+  openGathering: import('./types').Gathering | null
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -151,7 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!code || !me || !data?.group.tgLinked) return
     if (!data.gatherings.some((g) => !g.closedAt)) return
     window.clearTimeout(touchTimer.current)
-    touchTimer.current = window.setTimeout(() => { tg('touch', { code, personId: me }).catch(() => {}) }, 2500)
+    touchTimer.current = window.setTimeout(() => { tg('touch', { code, personId: me, respond: false }).catch(() => {}) }, 2500)
   }, [code, me, data])
 
   const run = useCallback(async (fn: () => Promise<unknown>, after?: () => void) => {
@@ -213,22 +215,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await run(() => api.updatePerson(code, me, name, color, note))
   }, [code, me, run])
 
-  const gather = useCallback(async (note: string) => {
+  const gather = useCallback(async (note: string, weekOffset: number, weeks: number) => {
     if (!code || !me) return
     try {
-      await tg('gather', { code, personId: me, weekOffset: week, note })
+      await tg('gather', { code, personId: me, weekOffset, weeks, note })
       announce(); await load(code)
-      toast('Отправили в Telegram')
+      toast('Отправили в беседу')
     } catch (e) { toast((e as Error).message) }
-  }, [code, me, week, announce, load, toast])
+  }, [code, me, announce, load, toast])
+
+  /** «Я отметился» — засчитать ответ в сборе и обновить сводку в чате. */
+  const respond = useCallback(async () => {
+    if (!code || !me) return
+    window.clearTimeout(touchTimer.current)
+    try {
+      await tg('touch', { code, personId: me, respond: true })
+      announce(); await load(code)
+      toast('Отметил тебя в сборе ✓')
+    } catch (e) { toast((e as Error).message) }
+  }, [code, me, announce, load, toast])
+
+  const openGathering = useMemo(() => data?.gatherings.find((g) => !g.closedAt) ?? null, [data])
 
   const value = useMemo<Store>(() => ({
     status, error, code, me, data, week, page, sel, sheet, toastMsg,
     setWeek: (w) => { setWeek(w); setSel(null) },
     setPage: (p) => { setPage(p); setSheet(null); window.scrollTo({ top: 0 }) },
     setSel, openSheet: setSheet, closeSheet: () => setSheet(null), toast,
-    pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather,
-  }), [status, error, code, me, data, week, page, sel, sheet, toastMsg, toast, pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather])
+    pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather, respond, openGathering,
+  }), [status, error, code, me, data, week, page, sel, sheet, toastMsg, toast, pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather, respond, openGathering])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -25,8 +25,8 @@ export function weekStartKey(offset: number): string { return dkey(addDays(monda
 
 export function fmtDay(key: string): string { const d = parse(key); return `${DOW[(d.getUTCDay() + 6) % 7]} ${d.getUTCDate()}` }
 export function fmtDayLong(key: string): string { const d = parse(key); return `${d.getUTCDate()} ${MONG[d.getUTCMonth()]}` }
-export function weekLabel(weekStart: string): string {
-  const a = parse(weekStart), b = addDays(a, 6)
+export function weekLabel(weekStart: string, weeks = 1): string {
+  const a = parse(weekStart), b = addDays(a, weeks * 7 - 1)
   return a.getUTCMonth() === b.getUTCMonth() ? `${a.getUTCDate()}–${b.getUTCDate()} ${MONG[a.getUTCMonth()]}` : `${a.getUTCDate()} ${MONG[a.getUTCMonth()]} – ${b.getUTCDate()} ${MONG[b.getUTCMonth()]}`
 }
 
@@ -38,14 +38,14 @@ export function isBusy(state: State, personId: string, dateKey: string, wd: numb
 
 export interface Win { date: string; slot: SlotId; free: Person[]; busy: Person[]; n: number }
 
-export function windows(state: State, weekStart: string): Win[] {
+export function windows(state: State, weekStart: string, weeks = 1): Win[] {
   const today = dkey(todayMsk())
   const out: Win[] = []
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < weeks * 7; i++) {
     const dateKey = dkey(addDays(parse(weekStart), i))
     if (dateKey < today) continue
     for (const slot of SLOTS) {
-      const free = state.people.filter((p) => !isBusy(state, p.id, dateKey, i + 1, slot))
+      const free = state.people.filter((p) => !isBusy(state, p.id, dateKey, (i % 7) + 1, slot))
       const busy = state.people.filter((p) => !free.includes(p))
       out.push({ date: dateKey, slot, free, busy, n: free.length })
     }

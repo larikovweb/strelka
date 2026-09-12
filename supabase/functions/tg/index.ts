@@ -58,24 +58,24 @@ const keyboard = (gatheringId: string | null, code: string, weekStart: string) =
 })
 
 /* ---------- сводка сбора ---------- */
-interface Gathering { id: string; group_id: string; week_start: string; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
+interface Gathering { id: string; group_id: string; week_start: string; weeks: number; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
 
 function summary(st: State, g: Gathering): string {
   const total = st.people.length
   const by = st.people.find((p) => p.id === g.initiated_by)
   const responded = st.people.filter((p) => g.responded.includes(p.id))
   const waiting = st.people.filter((p) => !g.responded.includes(p.id))
-  const wins = windows(st, g.week_start)
-  const all = wins.filter((w) => w.n === total)
+  const wins = windows(st, g.week_start, g.weeks)
+  const all = wins.filter((w) => w.n === total).sort((a, b) => a.date.localeCompare(b.date))
   const lines = [
-    `📣 <b>Собираемся?</b> ${by ? esc(by.name) + ' предлагает' : 'Предложение'} встретиться на неделе <b>${weekLabel(g.week_start)}</b>.`,
+    `📣 <b>Собираемся?</b> ${by ? esc(by.name) + ' предлагает' : 'Предложение'} встретиться ${g.weeks > 1 ? 'в период' : 'на неделе'} <b>${weekLabel(g.week_start, g.weeks)}</b>.`,
     g.note ? `<i>${esc(g.note)}</i>` : '',
     '',
     responded.length ? `Отметились: ${responded.map((p) => esc(p.name) + ' ✓').join(' · ')}` : 'Пока никто не отметился.',
     waiting.length ? `Ждём: ${waiting.map((p) => esc(p.name)).join(', ')}` : '<b>Все отметились!</b>',
     '',
   ]
-  if (all.length) lines.push(`🟢 Окна для всех: ${all.slice(0, 5).map((w) => `<b>${winLabel(w)}</b>`).join(', ')}`)
+  if (all.length) lines.push(`🟢 Окна для всех: ${all.slice(0, 8).map((w) => `<b>${winLabel(w)}</b>`).join(', ')}${all.length > 8 ? ` и ещё ${all.length - 8}` : ''}`)
   else {
     const best = wins.slice(0, 3).filter((w) => w.n >= total - 2)
     lines.push(best.length ? `🟡 Окна для всех пока нет. Лучшие: ${best.map((w) => `${winLabel(w)} (${w.n}/${total}, без ${w.busy.map((p) => esc(p.name)).join(', ')})`).join('; ')}` : '🔴 Свободных окон почти нет — отметьте, где всё-таки можете.')
@@ -94,8 +94,8 @@ async function postGathering(code: string, g: Gathering, chatId: number) {
   }
   // все отметились → отдельное сообщение один раз
   if (st.people.every((p) => g.responded.includes(p.id)) && !g.all_notified_at) {
-    const wins = windows(st, g.week_start), total = st.people.length
-    const all = wins.filter((w) => w.n === total)
+    const wins = windows(st, g.week_start, g.weeks), total = st.people.length
+    const all = wins.filter((w) => w.n === total).sort((a, b) => a.date.localeCompare(b.date))
     const text2 = all.length
       ? `✅ Все отметились! Окно для всех: <b>${winLabel(all[0])}</b>${all.length > 1 ? ` (ещё: ${all.slice(1, 4).map(winLabel).join(', ')})` : ''}. Забивайте в приложении.`
       : `✅ Все отметились, но окна для всех пятерых нет. Лучшее: <b>${winLabel(wins[0])}</b> — без ${wins[0].busy.map((p) => esc(p.name)).join(', ')}. Решайте в чате или подвиньте планы.`
@@ -104,9 +104,9 @@ async function postGathering(code: string, g: Gathering, chatId: number) {
   }
 }
 
-async function startGathering(code: string, chatId: number, initiatedBy: string | null, weekOffset: number, note: string | null) {
+async function startGathering(code: string, chatId: number, initiatedBy: string | null, weekOffset: number, weeks: number, note: string | null) {
   const weekStart = weekStartKey(weekOffset)
-  const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, week_start: weekStart, initiated_by: initiatedBy, note: note || null })
+  const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, week_start: weekStart, weeks: Math.min(8, Math.max(1, weeks)), initiated_by: initiatedBy, note: note || null })
   // инициатор сам ещё не отметился — но его правила уже учтены; считаем, что он «в курсе»
   const g2 = initiatedBy ? await rpc<Gathering>('strelka_admin_gathering_update', { gathering_id: g.id, add_responded: initiatedBy }) : g
   await postGathering(code, g2, chatId)
@@ -146,9 +146,11 @@ async function handleUpdate(u: TgUpdate) {
     const g = await rpc<{ id: string; code: string; name: string } | null>('strelka_admin_group_by_chat', { chat_id: chatId })
     if (!g) { await tgApi('sendMessage', { chat_id: chatId, text: 'Чат ещё не привязан: напиши /link <код> (код — в разделе «Мы» приложения).' }); return }
     const p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: m.from.id })
-    const next = /след|next/i.test(args)
-    const note = args.replace(/\b(след\w*|next)\b/gi, '').trim()
-    await startGathering(g.code, chatId, p?.personId ?? null, next ? 1 : 0, note)
+    // /strelka [след] [месяц] [повод]
+    const next = /\bслед\w*|\bnext\b/i.test(args)
+    const month = /\bмесяц\b|\bmonth\b/i.test(args)
+    const note = args.replace(/\b(след\w*|next|месяц|month)\b/gi, '').replace(/\s+/g, ' ').trim()
+    await startGathering(g.code, chatId, p?.personId ?? null, next ? 1 : 0, month ? 4 : 1, note)
     return
   }
 }
@@ -179,13 +181,14 @@ async function handleAction(body: Record<string, unknown>) {
   if (!info?.chatId) throw new Error('Бот не подключён к беседе — см. раздел «Мы»')
 
   if (a === 'gather') {
-    const g = await startGathering(code, info.chatId, String(body.personId), Number(body.weekOffset ?? 0), body.note ? String(body.note) : null)
+    const g = await startGathering(code, info.chatId, String(body.personId), Number(body.weekOffset ?? 0), Number(body.weeks ?? 1), body.note ? String(body.note) : null)
     return { gatheringId: g.id }
   }
   if (a === 'touch') {
     const g = await rpc<Gathering | null>('strelka_admin_open_gathering_of', { code })
     if (!g) return { ok: true }
-    const g2 = await rpc<Gathering>('strelka_admin_gathering_update', { gathering_id: g.id, add_responded: body.personId })
+    // respond=true — человек нажал «я отметился»; иначе просто обновляем сводку
+    const g2 = body.respond ? await rpc<Gathering>('strelka_admin_gathering_update', { gathering_id: g.id, add_responded: body.personId }) : g
     await postGathering(code, g2, info.chatId)
     return { ok: true }
   }

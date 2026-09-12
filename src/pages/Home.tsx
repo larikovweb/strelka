@@ -1,4 +1,4 @@
-import { SLOTS, weekDays, weekLabel, weekStartKey } from '../lib/dates'
+import { SLOTS, weekDays, weekLabel } from '../lib/dates'
 import { genitive, rank, topCell, weekCells } from '../lib/model'
 import { useReady } from '../lib/store'
 import type { Cell } from '../lib/types'
@@ -6,6 +6,7 @@ import { Avatar } from '../components/Avatar'
 import { DetailList } from '../components/DetailList'
 import { WeekTabs } from '../components/WeekTabs'
 import { burst } from '../components/confetti'
+import { GatheringBanner } from '../components/GatheringBanner'
 
 function heat(n: number, total: number, booked: boolean): [string, string] {
   if (booked) return ['#10131A', '#fff']
@@ -22,7 +23,6 @@ export function Home() {
   const total = data.people.length
   const selected = all.find((c) => c.id === sel) ?? top ?? all[0]
   const alts = rank(data, week).filter((c) => top && c.id !== top.id && c.n >= Math.max(2, total - 2)).slice(0, 5)
-  const gathering = data.gatherings.find((g) => !g.closedAt && g.weekStart === weekStartKey(week))
 
   const pick = (c: Cell) => {
     setSel(c.id)
@@ -37,7 +37,7 @@ export function Home() {
         <button type="button" className="gather-btn" onClick={() => openSheet({ type: 'gather' })}>Собираемся?</button>
       </header>
       <WeekTabs />
-      {gathering && <GatheringBanner responded={gathering.responded} />}
+      <GatheringBanner where="home" />
       <div className="home">
         <article className="card hero">
           {top ? (
@@ -110,20 +110,5 @@ export function Home() {
         </div>
       </div>
     </>
-  )
-}
-
-function GatheringBanner({ responded }: { responded: string[] }) {
-  const { data, me, setPage } = useReady()
-  const waiting = data.people.filter((p) => !responded.includes(p.id))
-  const meDone = responded.includes(me)
-  return (
-    <div className="banner">
-      <span className="dot" />
-      <span>
-        <b>Идёт сбор.</b> {waiting.length ? `Отметились ${responded.length} из ${data.people.length}, ждём: ${waiting.map((p) => p.name).join(', ')}.` : 'Все отметились — выбирайте окно.'}
-      </span>
-      {!meDone && <button type="button" onClick={() => setPage('sched')}>Отметить</button>}
-    </div>
   )
 }

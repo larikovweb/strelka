@@ -71,9 +71,8 @@ export function dayOf(key: string): Day {
   return { key, wd, dow: DOW[wd - 1], dowf: DOWF[wd - 1], num: d.getDate(), mong: MONG[d.getMonth()], today: key === today, past: key < today }
 }
 
-export function weekLabel(offset: number): string {
-  const ds = weekDays(offset)
-  const a = ds[0], b = ds[6]
+export function weekLabel(offset: number, weeks = 1): string {
+  const a = weekDays(offset)[0], b = weekDays(offset + weeks - 1)[6]
   return a.mong === b.mong ? `${a.num}–${b.num} ${a.mong}` : `${a.num} ${a.mong} – ${b.num} ${b.mong}`
 }
 

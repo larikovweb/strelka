@@ -71,7 +71,7 @@ function SheetBody() {
   }
 
   if (sheet.type === 'gather') {
-    return <GatherForm week={weekLabel(week)} linked={data.group.tgLinked} onSend={async (note) => { await gather(note); closeSheet() }} onCopy={() => { toast('Ссылка скопирована') }} />
+    return <GatherForm initial={week} linked={data.group.tgLinked} onSend={async (note, from, weeks) => { await gather(note, from, weeks); closeSheet() }} onCopy={() => { toast('Сообщение скопировано') }} />
   }
   return null
 }
@@ -110,21 +110,43 @@ function ProfileForm({ name, color, note, onSave, onSwitch }: { name: string; co
   )
 }
 
-function GatherForm({ week, linked, onSend, onCopy }: { week: string; linked: boolean; onSend: (note: string) => Promise<void>; onCopy: () => void }) {
+function GatherForm({ initial, linked, onSend, onCopy }: { initial: number; linked: boolean; onSend: (note: string, from: number, weeks: number) => Promise<void>; onCopy: () => void }) {
   const [note, setNote] = useState('')
+  const [from, setFrom] = useState(initial)
+  const [to, setTo] = useState(initial)
   const [busy, setBusy] = useState(false)
+  const weeks = to - from + 1
+  const period = weekLabel(from, weeks)
   const link = location.origin + location.pathname
+  const pick = (i: number) => {
+    if (i < from) setFrom(i)
+    else if (i > to) setTo(i)
+    else if (i === from && i === to) return
+    else if (i === from) setFrom(i + 1)
+    else if (i === to) setTo(i - 1)
+    else { setFrom(i); setTo(i) }
+  }
   return (
     <>
-      <h3>Собираемся?<small>неделя {week}</small></h3>
+      <h3>Собираемся?<small>{period}</small></h3>
       <div className="form">
-        <p className="hint">{linked
-          ? 'Бот напишет в беседу с кнопкой «отметить, когда могу» и будет обновлять сводку, пока все не ответят.'
-          : 'Бот ещё не подключён к беседе: в разделе «Мы» есть инструкция. Пока можно отправить ссылку вручную.'}</p>
+        <div>
+          <label>Когда ищем окно</label>
+          <div className="chips">
+            {['эта неделя', 'следующая', 'через одну', 'через две'].map((l, i) => (
+              <button key={i} type="button" className={i >= from && i <= to ? 'on' : ''} onClick={() => pick(i)}>{l}<span className="dim"> {weekLabel(i)}</span></button>
+            ))}
+            <button type="button" className={from === 0 && to === 3 ? 'on' : ''} onClick={() => { setFrom(0); setTo(3) }}>Весь месяц</button>
+          </div>
+          <p className="hint">Тапни несколько недель подряд — сбор будет на весь период.</p>
+        </div>
         <div><label htmlFor="g-note">Повод (необязательно)</label><input id="g-note" className="input" value={note} placeholder="Давно не виделись! Бар? Настолки?" onChange={(e) => setNote(e.target.value)} /></div>
+        <p className="hint">{linked
+          ? 'Бот напишет в беседу с кнопкой «отметить, когда могу» и будет обновлять сводку, пока все не нажмут «Я отметился».'
+          : 'Бот ещё не подключён к беседе: в разделе «Мы» есть инструкция. Пока можно отправить ссылку вручную.'}</p>
         {linked
-          ? <button type="button" className="btn" disabled={busy} onClick={() => { setBusy(true); void onSend(note.trim()).finally(() => setBusy(false)) }}>Отправить в беседу</button>
-          : <button type="button" className="btn dark" onClick={() => { void navigator.clipboard?.writeText(`${note.trim() ? note.trim() + '\n' : ''}Отметьте, когда можете на неделе ${week}: ${link}`); onCopy() }}>Скопировать сообщение для чата</button>}
+          ? <button type="button" className="btn" disabled={busy} onClick={() => { setBusy(true); void onSend(note.trim(), from, weeks).finally(() => setBusy(false)) }}>Отправить в беседу</button>
+          : <button type="button" className="btn dark" onClick={() => { void navigator.clipboard?.writeText(`${note.trim() ? note.trim() + '\n' : ''}Отметьте, когда можете (${period}): ${link}`); onCopy() }}>Скопировать сообщение для чата</button>}
       </div>
     </>
   )

@@ -35,7 +35,7 @@ begin
                            from strelka.overrides o where o.group_id = g.id and o.date >= current_date - 14), '[]'::jsonb),
     'meetings', coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'date',m.date,'slot',m.slot,'title',m.title,'place',m.place,'createdBy',m.created_by,'canceledAt',m.canceled_at) order by m.date)
                           from strelka.meetings m where m.group_id = g.id and m.date >= current_date - 60), '[]'::jsonb),
-    'gatherings', coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'weekStart',x.week_start,'initiatedBy',x.initiated_by,'note',x.note,'responded',x.responded,'closedAt',x.closed_at) order by x.created_at desc)
+    'gatherings', coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'weekStart',x.week_start,'initiatedBy',x.initiated_by,'note',x.note,'responded',x.responded,'weeks',x.weeks,'closedAt',x.closed_at) order by x.created_at desc)
                           from strelka.gatherings x where x.group_id = g.id and x.week_start >= current_date - 7), '[]'::jsonb)
   );
 end $$;
@@ -119,3 +119,18 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke execute on function public.strelka_admin_gathering_get(uuid) from public, anon, authenticated;
 grant execute on function public.strelka_admin_gathering_get(uuid) to service_role;
+
+-- Период сбора: несколько недель подряд начиная с week_start.
+alter table strelka.gatherings add column if not exists weeks int not null default 1;
+
+create or replace function public.strelka_admin_open_gathering(code text, week_start date, initiated_by uuid, note text, weeks int default 1) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare g uuid := strelka.gid(code); x strelka.gatherings;
+begin
+  update strelka.gatherings set closed_at = now() where group_id = g and closed_at is null;
+  insert into strelka.gatherings (group_id, week_start, weeks, initiated_by, note) values (g, week_start, greatest(1, weeks), initiated_by, note) returning * into x;
+  return to_jsonb(x);
+end $$;
+drop function if exists public.strelka_admin_open_gathering(text, date, uuid, text);
+revoke execute on function public.strelka_admin_open_gathering(text, date, uuid, text, int) from public, anon, authenticated;
+grant execute on function public.strelka_admin_open_gathering(text, date, uuid, text, int) to service_role;

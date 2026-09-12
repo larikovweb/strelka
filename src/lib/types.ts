@@ -41,6 +41,7 @@ export interface Meeting {
 export interface Gathering {
   id: string
   weekStart: string
+  weeks: number
   initiatedBy: string | null
   note: string | null
   responded: string[]
