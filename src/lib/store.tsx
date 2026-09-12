@@ -22,11 +22,11 @@ type Status = 'boot' | 'nocode' | 'pick' | 'ready' | 'error'
 const LS_CODE = 'strelka.code'
 const LS_ME = 'strelka.me'
 
-function readHash(): { code: string; weekStart: string | null } | null {
-  const m = location.hash.match(/#\/j\/([A-Za-z0-9_-]+)(?:\/w\/(\d{4}-\d{2}-\d{2}))?/)
+function readHash(): { code: string; weekStart: string | null; gather: boolean } | null {
+  const m = location.hash.match(/#\/j\/([A-Za-z0-9_-]+)(?:\/w\/(\d{4}-\d{2}-\d{2}))?(\/g)?/)
   if (!m) return null
   history.replaceState(null, '', location.pathname)
-  return { code: m[1], weekStart: m[2] ?? null }
+  return { code: m[1], weekStart: m[2] ?? null, gather: !!m[3] }
 }
 
 function ls(key: string): string | null {
@@ -111,6 +111,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const hash = readHash()
         const hashCode = hash?.code ?? null
         if (hash?.weekStart) { setWeek(Math.max(0, weekOffsetOf(hash.weekStart))); setPage('sched') }
+        if (hash?.gather || tgApp?.initDataUnsafe.start_param === 'gather') setSheet({ type: 'gather' })
         if (inTelegram && tgApp) {
           tgApp.ready(); tgApp.expand()
           const r = await tg<{ code: string | null; personId: string | null; weekStart: string | null }>('auth', {

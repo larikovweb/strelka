@@ -134,8 +134,95 @@ async function startGathering(code: string, chatId: number, initiatedBy: string 
   return g2
 }
 
+/* ---------- разбор дат из команды ---------- */
+const MON_RX = /(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек)/i
+const MON_IDX: Record<string, number> = { янв: 0, фев: 1, мар: 2, апр: 3, май: 4, мая: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, ноя: 10, дек: 11 }
+interface Tok { day: number; month: number | null; year: number | null; raw: string }
+
+/** Находит в тексте до двух дат: «14», «14.09», «14.09.2026», «14 сентября». */
+function dateTokens(text: string): Tok[] {
+  const out: Tok[] = []
+  const rx = /(\d{1,2})(?:[./](\d{1,2})(?:[./](\d{4}))?)?(?:\s*(янв\w*|фев\w*|мар\w*|апр\w*|ма[йя]|июн\w*|июл\w*|авг\w*|сен\w*|окт\w*|ноя\w*|дек\w*))?/gi
+  for (const m of text.matchAll(rx)) {
+    const day = Number(m[1])
+    if (!day || day > 31) continue
+    let month: number | null = m[2] ? Number(m[2]) - 1 : null
+    if (m[4]) month = MON_IDX[m[4].slice(0, 3).toLowerCase()] ?? MON_IDX[m[4].toLowerCase()] ?? month
+    out.push({ day, month, year: m[3] ? Number(m[3]) : null, raw: m[0] })
+    if (out.length === 2) break
+  }
+  return out
+}
+
+/** «14-20», «14.09–20.09», «с 14 по 20 сентября», «19» → {from, to, rest}; null, если дат нет. */
+function parseRange(text: string): { from: string; to: string; rest: string } | null {
+  const toks = dateTokens(text)
+  if (!toks.length) return null
+  const today = todayMsk()
+  const y0 = today.getUTCFullYear(), m0 = today.getUTCMonth()
+  const [a, b] = toks
+  // месяц берём явный, иначе — от соседнего токена, иначе текущий (или следующий, если день уже прошёл)
+  let ma = a.month ?? b?.month ?? m0
+  if (a.month == null && b?.month == null && a.day < today.getUTCDate()) ma = m0 + 1
+  const mb = b ? (b.month ?? ma) : ma
+  const mk = (d: number, m: number, y: number | null) => { const dt = new Date(Date.UTC(y ?? y0, m, d)); return dkey(dt) }
+  let from = mk(a.day, ma, a.year), to = b ? mk(b.day, mb, b.year ?? a.year) : from
+  if (to < from) { const t = to; to = from; from = t }
+  let rest = text
+  for (const t of toks) rest = rest.replace(t.raw, ' ')
+  rest = rest.replace(/\b(с|по|до|c|-|–|—)\b/gi, ' ').replace(/[–—-]/g, ' ').replace(/\s+/g, ' ').trim()
+  return { from, to, rest }
+}
+
+function gatherPrompt(code: string, weekStart: string) {
+  const today = dkey(todayMsk())
+  const sunday = addDaysKey(weekStartKey(0), 6)
+  const nextMon = weekStartKey(1)
+  const rows: { text: string; callback_data?: string; url?: string }[][] = []
+  if (today < sunday) rows.push([{ text: `До конца недели · ${rangeLabel(today, sunday)}`, callback_data: `g:${today}:${sunday}` }])
+  rows.push([{ text: `Следующая неделя · ${rangeLabel(nextMon, addDaysKey(nextMon, 6))}`, callback_data: `g:${nextMon}:${addDaysKey(nextMon, 6)}` }])
+  rows.push([{ text: `Две недели · ${rangeLabel(nextMon, addDaysKey(nextMon, 13))}`, callback_data: `g:${nextMon}:${addDaysKey(nextMon, 13)}` }])
+  rows.push([{ text: `Месяц · ${rangeLabel(today, addDaysKey(today, 30))}`, callback_data: `g:${today}:${addDaysKey(today, 30)}` }])
+  rows.push([{ text: '📅 Выбрать даты в календаре', url: BOT_USERNAME && APP_SHORT ? `https://t.me/${BOT_USERNAME}/${APP_SHORT}?startapp=gather` : `${APP_URL}#/j/${code}/g` }])
+  rows.push([{ text: '✕ Не сейчас', callback_data: 'g:cancel' }])
+  return { text: `На какие даты ищем окно? Можно и текстом: <code>/strelka 14-20</code> или <code>/strelka с 14 по 20 сентября бар?</code>`, keyboard: { inline_keyboard: rows }, weekStart }
+}
+
 /* ---------- вебхук Telegram ---------- */
-interface TgUpdate { message?: { message_id: number; text?: string; chat: { id: number; type: string }; from?: { id: number; first_name: string; username?: string } } }
+interface TgUser { id: number; first_name: string; username?: string }
+interface TgUpdate {
+  message?: { message_id: number; text?: string; chat: { id: number; type: string }; from?: TgUser }
+  callback_query?: { id: string; data?: string; from: TgUser; message?: { message_id: number; chat: { id: number } } }
+}
+
+/** Участник по tg-аккаунту; если не привязан — автопривязка по уникальному имени. */
+async function resolvePerson(code: string, from: TgUser): Promise<{ personId: string } | null> {
+  const p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: from.id })
+  if (p) return p
+  const tg = await peopleTg(code)
+  const same = tg.filter((x) => !x.tgUserId && x.name.trim().toLowerCase() === from.first_name.trim().toLowerCase())
+  if (same.length !== 1) return null
+  await rpc('strelka_admin_bind_tg', { code, person_id: same[0].id, tg_user_id: from.id, tg_username: from.username ?? null })
+  return { personId: same[0].id }
+}
+
+async function handleCallback(q: NonNullable<TgUpdate['callback_query']>) {
+  const chatId = q.message?.chat.id
+  const data = q.data ?? ''
+  if (!chatId || !data.startsWith('g:')) { await tgApi('answerCallbackQuery', { callback_query_id: q.id }); return }
+  if (data === 'g:cancel') {
+    await tgApi('answerCallbackQuery', { callback_query_id: q.id })
+    if (q.message) await tgApi('deleteMessage', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {})
+    return
+  }
+  const [, from, to] = data.split(':')
+  const g = await rpc<{ id: string; code: string; name: string } | null>('strelka_admin_group_by_chat', { chat_id: chatId })
+  if (!g) { await tgApi('answerCallbackQuery', { callback_query_id: q.id, text: 'Чат не привязан' }); return }
+  const p = await resolvePerson(g.code, q.from)
+  await tgApi('answerCallbackQuery', { callback_query_id: q.id, text: 'Запускаю сбор' })
+  if (q.message) await tgApi('deleteMessage', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {})
+  await startGathering(g.code, chatId, p?.personId ?? null, from, to, null)
+}
 
 async function handleUpdate(u: TgUpdate) {
   const m = u.message
@@ -163,32 +250,35 @@ async function handleUpdate(u: TgUpdate) {
     return
   }
 
+  if (cmd === '/help' || (cmd === '/start' && m.chat.type !== 'private')) {
+    await tgApi('sendMessage', { chat_id: chatId, parse_mode: 'HTML', text: [
+      '<b>Стрелка</b> — когда собираемся?',
+      '/strelka — выбрать даты кнопками',
+      '/strelka 14-20 — сбор на эти числа (можно «с 14 по 20 сентября», «14.09–20.09», одно число)',
+      '/strelka след · /strelka месяц — следующая неделя / 30 дней',
+      '/strelka отмена — отменить текущий сбор',
+      'Отмечать занятость и забивать встречу — в приложении по кнопке из сбора.',
+    ].join('\n') })
+    return
+  }
+
   if (cmd === '/strelka' || cmd === '/meet' || cmd === '/сбор') {
     const g = await rpc<{ id: string; code: string; name: string } | null>('strelka_admin_group_by_chat', { chat_id: chatId })
     if (!g) { await tgApi('sendMessage', { chat_id: chatId, text: 'Чат ещё не привязан: напиши /link <код> (код — в разделе «Мы» приложения).' }); return }
-    let p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: m.from.id })
-    if (!p) {
-      // автопривязка: имя в Telegram совпадает с единственным непривязанным участником
-      const tg = await peopleTg(g.code)
-      const same = tg.filter((x) => !x.tgUserId && x.name.trim().toLowerCase() === m.from!.first_name.trim().toLowerCase())
-      if (same.length === 1) {
-        await rpc('strelka_admin_bind_tg', { code: g.code, person_id: same[0].id, tg_user_id: m.from.id, tg_username: m.from.username ?? null })
-        p = { personId: same[0].id }
-      }
-    }
+    const p = await resolvePerson(g.code, m.from)
     if (/^(отмена|cancel)$/i.test(args.trim())) {
       const ok = await cancelGathering(g.code, chatId, p?.personId ?? null)
       if (!ok) await tgApi('sendMessage', { chat_id: chatId, text: 'Открытого сбора нет.' })
       return
     }
-    // /strelka [след] [месяц] [повод]: по умолчанию — с сегодня до конца следующей недели
-    const next = /\bслед\w*|\bnext\b/i.test(args)
-    const month = /\bмесяц\b|\bmonth\b/i.test(args)
-    const note = args.replace(/\b(след\w*|next|месяц|month)\b/gi, '').replace(/\s+/g, ' ').trim()
+    // даты в команде → сразу сбор; иначе — спросить кнопками
     const today = dkey(todayMsk())
-    const from = next ? weekStartKey(1) : today
-    const to = month ? addDaysKey(today, 30) : addDaysKey(weekStartKey(1), 6)
-    await startGathering(g.code, chatId, p?.personId ?? null, from, to, note)
+    const range = parseRange(args)
+    if (range) { await startGathering(g.code, chatId, p?.personId ?? null, range.from, range.to, range.rest || null); return }
+    if (/\bслед\w*|\bnext\b/i.test(args)) { const f = weekStartKey(1); await startGathering(g.code, chatId, p?.personId ?? null, f, addDaysKey(f, 6), args.replace(/\b(след\w*|next)\b/gi, '').trim() || null); return }
+    if (/\bмесяц\b|\bmonth\b/i.test(args)) { await startGathering(g.code, chatId, p?.personId ?? null, today, addDaysKey(today, 30), args.replace(/\b(месяц|month)\b/gi, '').trim() || null); return }
+    const pr = gatherPrompt(g.code, weekStartKey(0))
+    await tgApi('sendMessage', { chat_id: chatId, text: pr.text, parse_mode: 'HTML', reply_markup: pr.keyboard })
     return
   }
 }
@@ -257,7 +347,10 @@ Deno.serve(async (req) => {
   const hookHeader = req.headers.get('x-telegram-bot-api-secret-token')
   if (hookHeader) {
     if (!HOOK_SECRET || hookHeader !== HOOK_SECRET) return json({ error: 'forbidden' }, 403)
-    try { await handleUpdate(await req.json()) } catch (e) { console.error('update', e) }
+    try {
+      const u = (await req.json()) as TgUpdate
+      if (u.callback_query) await handleCallback(u.callback_query); else await handleUpdate(u)
+    } catch (e) { console.error('update', e) }
     return json({ ok: true })
   }
   try {
