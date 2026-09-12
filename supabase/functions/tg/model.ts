@@ -61,12 +61,19 @@ export function windows(state: State, from: string, to: string): Win[] {
     if (dateKey < today) continue
     const wd = ((d.getUTCDay() + 6) % 7) + 1
     for (const slot of SLOTS) {
+      if (slot === 'm') continue // утром не встречаемся
       const free = state.people.filter((p) => !isBusy(state, p.id, dateKey, wd, slot))
       const busy = state.people.filter((p) => !free.includes(p))
       out.push({ date: dateKey, slot, free, busy, n: free.length })
     }
   }
-  return out.sort((a, b) => b.n - a.n || a.date.localeCompare(b.date) || SLOTS.indexOf(a.slot) - SLOTS.indexOf(b.slot))
+  return out.sort((a, b) => b.n - a.n || tier(a) - tier(b) || a.date.localeCompare(b.date) || SLOTS.indexOf(a.slot) - SLOTS.indexOf(b.slot))
+}
+
+/** Вечер и выходной день — лучше всего, будний день — хуже (как meetTier во фронте). */
+function tier(w: Win): number {
+  const wd = ((parse(w.date).getUTCDay() + 6) % 7) + 1
+  return w.slot === 'e' ? 0 : wd >= 6 ? 0 : 1
 }
 
 export function winLabel(w: Win): string { return `${fmtDay(w.date)} ${SLOT_LABEL[w.slot]}` }

@@ -104,9 +104,17 @@ export function weekCells(state: GroupState, offset: number): Cell[][] {
   return weekDays(offset).map((d) => SLOTS.map((s) => cellOf(state, d, s.id)))
 }
 
+/** Насколько слот подходит для встречи: вечер и выходной день — лучше всего, будний день — хуже, утро не предлагаем. */
+export function meetTier(wd: number, slot: SlotId): number {
+  if (slot === 'e') return 0
+  if (slot === 'd') return wd >= 6 ? 0 : 1
+  return 99
+}
+
+/** Кандидаты на встречу: без утра, по числу свободных, затем по удобству слота, затем ближайшие. */
 export function rank(state: GroupState, offset: number): Cell[] {
-  const all = weekCells(state, offset).flat().filter((c) => !c.past)
-  return all.sort((a, b) => b.n - a.n || a.day.key.localeCompare(b.day.key) || SLOT_ORDER[a.slot.id] - SLOT_ORDER[b.slot.id])
+  const all = weekCells(state, offset).flat().filter((c) => !c.past && c.slot.id !== 'm')
+  return all.sort((a, b) => b.n - a.n || meetTier(a.day.wd, a.slot.id) - meetTier(b.day.wd, b.slot.id) || a.day.key.localeCompare(b.day.key) || SLOT_ORDER[a.slot.id] - SLOT_ORDER[b.slot.id])
 }
 
 export function topCell(state: GroupState, offset: number): Cell | null {

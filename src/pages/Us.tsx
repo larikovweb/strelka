@@ -44,7 +44,7 @@ export function Us() {
           <h2>Как считаем</h2>
           <div className="row"><span className="nm">Слоты дня<small>утро 6–12 · день 12–18 · вечер 18–24</small></span></div>
           <div className="row"><span className="nm">Правила<small>повторяющиеся — по дням недели; разовые и смены — по датам; тап в сетке перекрывает правило на один слот</small></span></div>
-          <div className="row"><span className="nm">Окно для всех<small>слот, где никто не отметил занятость</small></span></div>
+          <div className="row"><span className="nm">Окно для всех<small>день или вечер, где никто не занят; вечер и выходные — в приоритете, утро не предлагаем</small></span></div>
           <div className="row"><span className="nm">Версия<small>{APP_VERSION}</small></span><button type="button" className="mini" onClick={() => location.reload()}>Обновить</button></div>
         </article>
       </div>
