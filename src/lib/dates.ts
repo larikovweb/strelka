@@ -94,6 +94,26 @@ export function slotPast(day: Day, slot: SlotId): boolean {
   return slot === 'm' ? h >= 12 : slot === 'd' ? h >= 18 : false
 }
 
+export function rangeLabel(from: string, to: string): string {
+  const a = dayOf(from), b = dayOf(to)
+  if (from === to) return `${a.num} ${a.mong}`
+  return a.mong === b.mong ? `${a.num}–${b.num} ${a.mong}` : `${a.num} ${a.mong} – ${b.num} ${b.mong}`
+}
+
+export const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+
+/** Сетка месяца: недели по 7 дней (пн–вс), null — дни соседних месяцев. */
+export function monthGrid(year: number, month: number): (string | null)[][] {
+  const first = new Date(year, month, 1)
+  const lead = (first.getDay() + 6) % 7
+  const days = new Date(year, month + 1, 0).getDate()
+  const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => dkey(new Date(year, month, i + 1)))]
+  while (cells.length % 7) cells.push(null)
+  const rows: (string | null)[][] = []
+  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7))
+  return rows
+}
+
 export function dateRange(from: string, to: string): string[] {
   const out: string[] = []
   let d = parseKey(from)

@@ -1,7 +1,7 @@
 // Стрелка · Telegram-бот и мост для Mini App.
 // Вебхук Telegram (заголовок X-Telegram-Bot-Api-Secret-Token) и JSON-действия из приложения ({action: ...}).
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { type State, SLOT_HOURS, SLOT_LABEL, fmtDay, fmtDayLong, weekLabel, weekStartKey, winLabel, windows } from './model.ts'
+import { type State, SLOT_HOURS, SLOT_LABEL, addDaysKey, dkey, fmtDay, fmtDayLong, rangeLabel, todayMsk, weekStartKey, winLabel, windows } from './model.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const HOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
@@ -58,17 +58,17 @@ const keyboard = (gatheringId: string | null, code: string, weekStart: string) =
 })
 
 /* ---------- сводка сбора ---------- */
-interface Gathering { id: string; group_id: string; week_start: string; weeks: number; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
+interface Gathering { id: string; group_id: string; week_start: string; weeks: number; date_from: string; date_to: string; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
 
 function summary(st: State, g: Gathering): string {
   const total = st.people.length
   const by = st.people.find((p) => p.id === g.initiated_by)
   const responded = st.people.filter((p) => g.responded.includes(p.id))
   const waiting = st.people.filter((p) => !g.responded.includes(p.id))
-  const wins = windows(st, g.week_start, g.weeks)
+  const wins = windows(st, g.date_from, g.date_to)
   const all = wins.filter((w) => w.n === total).sort((a, b) => a.date.localeCompare(b.date))
   const lines = [
-    `📣 <b>Собираемся?</b> ${by ? esc(by.name) + ' предлагает' : 'Предложение'} встретиться ${g.weeks > 1 ? 'в период' : 'на неделе'} <b>${weekLabel(g.week_start, g.weeks)}</b>.`,
+    `📣 <b>Собираемся?</b> ${by ? esc(by.name) + ' предлагает' : 'Предложение'} встретиться: <b>${rangeLabel(g.date_from, g.date_to)}</b>.`,
     g.note ? `<i>${esc(g.note)}</i>` : '',
     '',
     responded.length ? `Отметились: ${responded.map((p) => esc(p.name) + ' ✓').join(' · ')}` : 'Пока никто не отметился.',
@@ -94,7 +94,7 @@ async function postGathering(code: string, g: Gathering, chatId: number) {
   }
   // все отметились → отдельное сообщение один раз
   if (st.people.every((p) => g.responded.includes(p.id)) && !g.all_notified_at) {
-    const wins = windows(st, g.week_start, g.weeks), total = st.people.length
+    const wins = windows(st, g.date_from, g.date_to), total = st.people.length
     const all = wins.filter((w) => w.n === total).sort((a, b) => a.date.localeCompare(b.date))
     const text2 = all.length
       ? `✅ Все отметились! Окно для всех: <b>${winLabel(all[0])}</b>${all.length > 1 ? ` (ещё: ${all.slice(1, 4).map(winLabel).join(', ')})` : ''}. Забивайте в приложении.`
@@ -104,9 +104,8 @@ async function postGathering(code: string, g: Gathering, chatId: number) {
   }
 }
 
-async function startGathering(code: string, chatId: number, initiatedBy: string | null, weekOffset: number, weeks: number, note: string | null) {
-  const weekStart = weekStartKey(weekOffset)
-  const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, week_start: weekStart, weeks: Math.min(8, Math.max(1, weeks)), initiated_by: initiatedBy, note: note || null })
+async function startGathering(code: string, chatId: number, initiatedBy: string | null, from: string, to: string, note: string | null) {
+  const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, date_from: from, date_to: to, initiated_by: initiatedBy, note: note || null })
   // инициатор сам ещё не отметился — но его правила уже учтены; считаем, что он «в курсе»
   const g2 = initiatedBy ? await rpc<Gathering>('strelka_admin_gathering_update', { gathering_id: g.id, add_responded: initiatedBy }) : g
   await postGathering(code, g2, chatId)
@@ -146,11 +145,14 @@ async function handleUpdate(u: TgUpdate) {
     const g = await rpc<{ id: string; code: string; name: string } | null>('strelka_admin_group_by_chat', { chat_id: chatId })
     if (!g) { await tgApi('sendMessage', { chat_id: chatId, text: 'Чат ещё не привязан: напиши /link <код> (код — в разделе «Мы» приложения).' }); return }
     const p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: m.from.id })
-    // /strelka [след] [месяц] [повод]
+    // /strelka [след] [месяц] [повод]: по умолчанию — с сегодня до конца следующей недели
     const next = /\bслед\w*|\bnext\b/i.test(args)
     const month = /\bмесяц\b|\bmonth\b/i.test(args)
     const note = args.replace(/\b(след\w*|next|месяц|month)\b/gi, '').replace(/\s+/g, ' ').trim()
-    await startGathering(g.code, chatId, p?.personId ?? null, next ? 1 : 0, month ? 4 : 1, note)
+    const today = dkey(todayMsk())
+    const from = next ? weekStartKey(1) : today
+    const to = month ? addDaysKey(today, 30) : addDaysKey(weekStartKey(1), 6)
+    await startGathering(g.code, chatId, p?.personId ?? null, from, to, note)
     return
   }
 }
@@ -181,7 +183,7 @@ async function handleAction(body: Record<string, unknown>) {
   if (!info?.chatId) throw new Error('Бот не подключён к беседе — см. раздел «Мы»')
 
   if (a === 'gather') {
-    const g = await startGathering(code, info.chatId, String(body.personId), Number(body.weekOffset ?? 0), Number(body.weeks ?? 1), body.note ? String(body.note) : null)
+    const g = await startGathering(code, info.chatId, String(body.personId), String(body.from), String(body.to), body.note ? String(body.note) : null)
     return { gatheringId: g.id }
   }
   if (a === 'touch') {

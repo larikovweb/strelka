@@ -23,7 +23,7 @@ function Shell() {
         {page === 'meet' && <Meetings />}
         {page === 'us' && <Us />}
       </main>
-      <button type="button" className="fab" aria-label="Добавить занятость" onClick={() => openSheet({ type: 'menu' })}>+</button>
+      <button type="button" className="fab" aria-label="Добавить занятость" onClick={() => openSheet({ type: 'rule' })}>+</button>
       <Sheet />
       <Toast />
     </div>

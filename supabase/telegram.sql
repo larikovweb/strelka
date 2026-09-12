@@ -29,13 +29,13 @@ begin
     'group', jsonb_build_object('id', g.id, 'name', g.name, 'code', g.invite_code, 'tgLinked', g.tg_chat_id is not null),
     'people', coalesce((select jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'color',p.color,'sort',p.sort,'note',p.note) order by p.sort)
                         from strelka.people p where p.group_id = g.id), '[]'::jsonb),
-    'rules', coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'personId',r.person_id,'kind',r.kind,'title',r.title,'weekdays',r.weekdays,'dates',r.dates,'slots',r.slots) order by r.created_at)
+    'rules', coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'personId',r.person_id,'kind',r.kind,'title',r.title,'weekdays',r.weekdays,'dates',r.dates,'slots',r.slots,'startMin',r.start_min,'endMin',r.end_min) order by r.created_at)
                        from strelka.rules r where r.group_id = g.id), '[]'::jsonb),
     'overrides', coalesce((select jsonb_agg(jsonb_build_object('personId',o.person_id,'date',o.date,'slot',o.slot,'busy',o.busy,'title',o.title))
                            from strelka.overrides o where o.group_id = g.id and o.date >= current_date - 14), '[]'::jsonb),
     'meetings', coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'date',m.date,'slot',m.slot,'title',m.title,'place',m.place,'createdBy',m.created_by,'canceledAt',m.canceled_at) order by m.date)
                           from strelka.meetings m where m.group_id = g.id and m.date >= current_date - 60), '[]'::jsonb),
-    'gatherings', coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'weekStart',x.week_start,'initiatedBy',x.initiated_by,'note',x.note,'responded',x.responded,'weeks',x.weeks,'closedAt',x.closed_at) order by x.created_at desc)
+    'gatherings', coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'weekStart',x.week_start,'initiatedBy',x.initiated_by,'note',x.note,'responded',x.responded,'weeks',x.weeks,'dateFrom',x.date_from,'dateTo',x.date_to,'closedAt',x.closed_at) order by x.created_at desc)
                           from strelka.gatherings x where x.group_id = g.id and x.week_start >= current_date - 7), '[]'::jsonb)
   );
 end $$;
@@ -114,7 +114,7 @@ grant execute on function public.strelka_admin_group_by_chat(bigint), public.str
 
 create or replace function public.strelka_admin_gathering_get(gathering_id uuid) returns jsonb
 language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object('id', x.id, 'code', g.invite_code, 'week_start', x.week_start)
+  select jsonb_build_object('id', x.id, 'code', g.invite_code, 'week_start', x.week_start, 'date_from', x.date_from)
   from strelka.gatherings x join strelka.groups g on g.id = x.group_id where x.id = gathering_id
 $$;
 revoke execute on function public.strelka_admin_gathering_get(uuid) from public, anon, authenticated;
@@ -134,3 +134,44 @@ end $$;
 drop function if exists public.strelka_admin_open_gathering(text, date, uuid, text);
 revoke execute on function public.strelka_admin_open_gathering(text, date, uuid, text, int) from public, anon, authenticated;
 grant execute on function public.strelka_admin_open_gathering(text, date, uuid, text, int) to service_role;
+
+-- Период сбора датами (date_from..date_to); week_start/weeks остаются для дип-линка на неделю.
+alter table strelka.gatherings add column if not exists date_from date, add column if not exists date_to date;
+update strelka.gatherings set date_from = week_start, date_to = week_start + weeks * 7 - 1 where date_from is null;
+alter table strelka.gatherings alter column date_from set not null, alter column date_to set not null;
+
+drop function if exists public.strelka_admin_open_gathering(text, date, uuid, text, int);
+create or replace function public.strelka_admin_open_gathering(code text, date_from date, date_to date, initiated_by uuid, note text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare g uuid := strelka.gid(code); x strelka.gatherings; ws date := date_from - (extract(isodow from date_from)::int - 1);
+begin
+  if date_to < date_from then raise exception 'bad_range'; end if;
+  update strelka.gatherings set closed_at = now() where group_id = g and closed_at is null;
+  insert into strelka.gatherings (group_id, week_start, weeks, date_from, date_to, initiated_by, note)
+  values (g, ws, ceil((date_to - ws + 1) / 7.0)::int, date_from, date_to, initiated_by, note) returning * into x;
+  return to_jsonb(x);
+end $$;
+revoke execute on function public.strelka_admin_open_gathering(text, date, date, uuid, text) from public, anon, authenticated;
+grant execute on function public.strelka_admin_open_gathering(text, date, date, uuid, text) to service_role;
+
+-- Точное время занятости в правиле (минуты от полуночи); слоты выводятся из пересечения.
+alter table strelka.rules add column if not exists start_min int, add column if not exists end_min int;
+
+create or replace function public.strelka_save_rule(code text, rule jsonb) returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare g uuid := strelka.gid(code); rid uuid := (rule->>'id')::uuid; pid uuid := (rule->>'personId')::uuid;
+  v_wd int[] := coalesce((select array_agg(x::int) from jsonb_array_elements_text(rule->'weekdays') x), '{}');
+  v_dates date[] := coalesce((select array_agg(x::date) from jsonb_array_elements_text(rule->'dates') x), '{}');
+  v_slots text[] := coalesce((select array_agg(x) from jsonb_array_elements_text(rule->'slots') x), '{}');
+  v_start int := (rule->>'startMin')::int; v_end int := (rule->>'endMin')::int;
+begin
+  if not exists (select 1 from strelka.people where id = pid and group_id = g) then raise exception 'bad_person'; end if;
+  if rid is not null then
+    update strelka.rules set kind = rule->>'kind', title = rule->>'title', weekdays = v_wd, dates = v_dates, slots = v_slots, start_min = v_start, end_min = v_end
+    where id = rid and group_id = g;
+    return rid;
+  end if;
+  insert into strelka.rules (group_id, person_id, kind, title, weekdays, dates, slots, start_min, end_min)
+  values (g, pid, rule->>'kind', rule->>'title', v_wd, v_dates, v_slots, v_start, v_end) returning id into rid;
+  return rid;
+end $$;

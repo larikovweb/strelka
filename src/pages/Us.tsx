@@ -16,8 +16,8 @@ export function Us() {
           {data.people.map((p) => (
             <div className="row" key={p.id}>
               <Avatar person={p} />
-              <span className="nm">{p.name}{p.id === me && ' (ты)'}<small>{p.note || '—'}</small></span>
-              {p.id === me && <button type="button" className="mini" onClick={() => openSheet({ type: 'profile' })}>Профиль</button>}
+              <button type="button" className="nm linkbtn" onClick={() => openSheet({ type: 'person', id: p.id })}>{p.name}{p.id === me && ' (ты)'}<small>{p.note || 'тап — календарь'}</small></button>
+              {p.id === me ? <button type="button" className="mini" onClick={() => openSheet({ type: 'profile' })}>Профиль</button> : <span className="chev">›</span>}
             </div>
           ))}
           <div className="link"><code>{link}</code><button type="button" onClick={() => copy(link, 'Ссылка скопирована')}>Скопировать</button></div>

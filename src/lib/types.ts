@@ -18,6 +18,8 @@ export interface Rule {
   weekdays: number[]
   dates: string[]
   slots: SlotId[]
+  startMin: number | null
+  endMin: number | null
 }
 
 export interface Override {
@@ -42,6 +44,8 @@ export interface Gathering {
   id: string
   weekStart: string
   weeks: number
+  dateFrom: string
+  dateTo: string
   initiatedBy: string | null
   note: string | null
   responded: string[]
@@ -60,6 +64,8 @@ export interface GroupState {
 export interface Entry {
   title: string
   kind: EntryKind
+  /** точное время правила, «12:00–19:00» */
+  time?: string
 }
 
 export interface Day {
@@ -89,6 +95,8 @@ export interface Cell {
   slot: Slot
   busy: BusyEntry[]
   free: Person[]
+  /** свободен, но часть слота занята: «занят до 19:00» */
+  notes: Record<string, string>
   n: number
   past: boolean
   meeting: Meeting | null

@@ -16,10 +16,10 @@ export function DetailList({ cell }: { cell: Cell }) {
         return (
           <div className="row" key={p.id}>
             <Avatar person={p} />
-            <span className="nm">{p.name}{p.id === me && <small>это ты · переключи, если занят</small>}</span>
+            <span className="nm">{p.name}{p.id === me && <small>это ты</small>}</span>
             {b
-              ? <span className="st busy"><i />{b.title}<small> · {KIND_LABEL[b.kind]}</small></span>
-              : <span className="st"><i />может</span>}
+              ? <span className="st busy"><i />{b.title}<small> · {b.time ?? KIND_LABEL[b.kind]}</small></span>
+              : <span className="st"><i />может{cell.notes[p.id] && <small> · {cell.notes[p.id]}</small>}</span>}
             {p.id === me && !cell.past && <Switch on={meBusy} label="Я занят" onChange={() => void toggleMe(cell.day, cell.slot.id)} />}
           </div>
         )

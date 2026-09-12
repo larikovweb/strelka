@@ -9,10 +9,10 @@ import type { Cell, Day, GroupState, Rule, SlotId } from './types'
 export type Page = 'home' | 'sched' | 'meet' | 'us'
 export type Sheet =
   | { type: 'detail'; id: string }
-  | { type: 'menu' }
   | { type: 'rule'; rule?: Rule; kind?: Rule['kind'] }
   | { type: 'meeting'; id: string }
   | { type: 'profile' }
+  | { type: 'person'; id: string }
   | { type: 'gather' }
   | null
 
@@ -62,7 +62,7 @@ interface Store {
   saveRule(rule: Omit<Rule, 'id'> & { id?: string }): Promise<void>
   deleteRule(id: string): Promise<void>
   updatePerson(name: string, color: string, note: string | null): Promise<void>
-  gather(note: string, weekOffset: number, weeks: number): Promise<void>
+  gather(note: string, from: string, to: string): Promise<void>
   respond(): Promise<void>
   openGathering: import('./types').Gathering | null
 }
@@ -215,10 +215,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await run(() => api.updatePerson(code, me, name, color, note))
   }, [code, me, run])
 
-  const gather = useCallback(async (note: string, weekOffset: number, weeks: number) => {
+  const gather = useCallback(async (note: string, from: string, to: string) => {
     if (!code || !me) return
     try {
-      await tg('gather', { code, personId: me, weekOffset, weeks, note })
+      await tg('gather', { code, personId: me, from, to, note })
       announce(); await load(code)
       toast('Отправили в беседу')
     } catch (e) { toast((e as Error).message) }

@@ -19,7 +19,7 @@ export function Nav() {
           <svg viewBox="0 0 24 24">{t.icon}</svg>{t.label}
         </button>
       ))}
-      <button type="button" className="side-cta" onClick={() => openSheet({ type: 'menu' })}>+ Отметить занятость</button>
+      <button type="button" className="side-cta" onClick={() => openSheet({ type: 'rule' })}>+ Отметить занятость</button>
       <button type="button" className="me" onClick={() => openSheet({ type: 'profile' })}>
         <Avatar person={meP} /><span>{meP.name}<small>это ты · профиль</small></span>
       </button>

@@ -1,7 +1,7 @@
 // Компактная копия модели доступности из фронта (src/lib/model.ts) для сводок в Telegram.
 export type SlotId = 'm' | 'd' | 'e'
 export interface Person { id: string; name: string; color: string; sort: number }
-export interface Rule { personId: string; kind: 'recurring' | 'oneoff' | 'shift'; title: string; weekdays: number[]; dates: string[]; slots: SlotId[] }
+export interface Rule { personId: string; kind: 'recurring' | 'oneoff' | 'shift'; title: string; weekdays: number[]; dates: string[]; slots: SlotId[]; startMin: number | null; endMin: number | null }
 export interface Override { personId: string; date: string; slot: SlotId; busy: boolean }
 export interface Meeting { id: string; date: string; slot: SlotId; title: string | null; place: string | null; canceledAt: string | null }
 export interface State { group: { id: string; name: string; code: string }; people: Person[]; rules: Rule[]; overrides: Override[]; meetings: Meeting[] }
@@ -30,22 +30,38 @@ export function weekLabel(weekStart: string, weeks = 1): string {
   return a.getUTCMonth() === b.getUTCMonth() ? `${a.getUTCDate()}–${b.getUTCDate()} ${MONG[a.getUTCMonth()]}` : `${a.getUTCDate()} ${MONG[a.getUTCMonth()]} – ${b.getUTCDate()} ${MONG[b.getUTCMonth()]}`
 }
 
+// Границы слотов и порог «занят» — как в src/lib/model.ts фронта.
+const SLOT_RANGE: Record<SlotId, [number, number]> = { m: [360, 720], d: [720, 1080], e: [1080, 1440] }
+const BUSY_MIN = 180
+function ruleSlots(r: Rule): SlotId[] {
+  if (r.startMin != null && r.endMin != null) return SLOTS.filter((sl) => { const [s, e] = SLOT_RANGE[sl]; return Math.min(e, r.endMin!) - Math.max(s, r.startMin!) >= BUSY_MIN })
+  return r.slots
+}
+
 export function isBusy(state: State, personId: string, dateKey: string, wd: number, slot: SlotId): boolean {
   const o = state.overrides.find((x) => x.personId === personId && x.date === dateKey && x.slot === slot)
   if (o) return o.busy
-  return state.rules.some((r) => r.personId === personId && r.slots.includes(slot) && (r.kind === 'recurring' ? r.weekdays.includes(wd) : r.dates.includes(dateKey)))
+  return state.rules.some((r) => r.personId === personId && ruleSlots(r).includes(slot) && (r.kind === 'recurring' ? r.weekdays.includes(wd) : r.dates.includes(dateKey)))
 }
 
 export interface Win { date: string; slot: SlotId; free: Person[]; busy: Person[]; n: number }
 
-export function windows(state: State, weekStart: string, weeks = 1): Win[] {
+export function rangeLabel(from: string, to: string): string {
+  const a = parse(from), b = parse(to)
+  if (from === to) return `${a.getUTCDate()} ${MONG[a.getUTCMonth()]}`
+  return a.getUTCMonth() === b.getUTCMonth() ? `${a.getUTCDate()}–${b.getUTCDate()} ${MONG[a.getUTCMonth()]}` : `${a.getUTCDate()} ${MONG[a.getUTCMonth()]} – ${b.getUTCDate()} ${MONG[b.getUTCMonth()]}`
+}
+export function addDaysKey(key: string, n: number): string { return dkey(addDays(parse(key), n)) }
+
+export function windows(state: State, from: string, to: string): Win[] {
   const today = dkey(todayMsk())
   const out: Win[] = []
-  for (let i = 0; i < weeks * 7; i++) {
-    const dateKey = dkey(addDays(parse(weekStart), i))
+  for (let d = parse(from); d <= parse(to); d = addDays(d, 1)) {
+    const dateKey = dkey(d)
     if (dateKey < today) continue
+    const wd = ((d.getUTCDay() + 6) % 7) + 1
     for (const slot of SLOTS) {
-      const free = state.people.filter((p) => !isBusy(state, p.id, dateKey, (i % 7) + 1, slot))
+      const free = state.people.filter((p) => !isBusy(state, p.id, dateKey, wd, slot))
       const busy = state.people.filter((p) => !free.includes(p))
       out.push({ date: dateKey, slot, free, busy, n: free.length })
     }

@@ -15,7 +15,8 @@ function heat(n: number, total: number, booked: boolean): [string, string] {
 }
 
 export function Home() {
-  const { data, week, sel, setSel, openSheet, book, cancelMeeting } = useReady()
+  const { data, week, sel, setSel, openSheet, book, cancelMeeting, openGathering } = useReady()
+  const inG = (key: string) => !!openGathering && key >= openGathering.dateFrom && key <= openGathering.dateTo
   const days = weekDays(week)
   const cells = weekCells(data, week)
   const all = cells.flat()
@@ -73,7 +74,7 @@ export function Home() {
           <h2>Вся неделя<small>сколько свободны</small></h2>
           <div className="hgrid">
             <div />
-            {days.map((d) => <div key={d.key} className={`hd${d.today ? ' today' : ''}`}>{d.dow}<b>{d.num}</b></div>)}
+            {days.map((d) => <div key={d.key} className={`hd${d.today ? ' today' : ''}${inG(d.key) ? ' ing' : ''}`}>{d.dow}<b>{d.num}</b></div>)}
             {SLOTS.map((s, si) => (
               <div key={s.id} className="contents">
                 <div className="hl">{s.label}</div>
@@ -98,13 +99,13 @@ export function Home() {
           {data.people.map((p) => {
             const busyN = all.filter((c) => c.busy.some((b) => b.person.id === p.id)).length
             return (
-              <div className="pcard" key={p.id}>
+              <button type="button" className="pcard" key={p.id} onClick={() => openSheet({ type: 'person', id: p.id })}>
                 <Avatar person={p} className="av sq" />
                 <b>{p.name}</b>
                 <span className="bar"><i style={{ '--c': p.color, '--w': `${Math.round((busyN / 21) * 100)}%` } as React.CSSProperties} /></span>
                 <small>занят {busyN} из 21</small>
                 {p.note && <span className="tag">{p.note}</span>}
-              </div>
+              </button>
             )
           })}
         </div>

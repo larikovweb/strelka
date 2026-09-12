@@ -1,5 +1,8 @@
 import { useState } from 'react'
-import { SLOT, fmtDayLong, weekLabel } from '../lib/dates'
+import { DOW, SLOT, SLOTS, addDays, dkey, fmtDayLong, mondayOf, rangeLabel, slotPast, todayKey, weekDays, weekLabel } from '../lib/dates'
+import { entry, ruleWhen } from '../lib/model'
+import { Avatar } from './Avatar'
+import { RangeCalendar } from './RangeCalendar'
 import { cellById } from '../lib/model'
 import { useReady } from '../lib/store'
 import { DetailList } from './DetailList'
@@ -22,7 +25,7 @@ export function Sheet() {
 }
 
 function SheetBody() {
-  const { sheet, data, week, openSheet, closeSheet, setPage, me, updateMeeting, cancelMeeting, updatePerson, forgetMe, gather, toast } = useReady()
+  const { sheet, data, week, closeSheet, me, updateMeeting, cancelMeeting, updatePerson, forgetMe, gather, toast } = useReady()
   if (!sheet) return null
 
   if (sheet.type === 'detail') {
@@ -36,24 +39,10 @@ function SheetBody() {
     )
   }
 
-  if (sheet.type === 'menu') {
-    return (
-      <>
-        <h3>Что добавить?</h3>
-        <div className="menu">
-          <button type="button" onClick={() => openSheet({ type: 'rule', kind: 'recurring' })}><span className="ic">↻</span><span>Повторяющееся<small>работа, зал, учёба — по дням недели</small></span></button>
-          <button type="button" onClick={() => openSheet({ type: 'rule', kind: 'oneoff' })}><span className="ic">✈</span><span>Разовое<small>уезжаю, день рождения, врач — по датам</small></span></button>
-          <button type="button" onClick={() => openSheet({ type: 'rule', kind: 'shift' })}><span className="ic">⇄</span><span>Смены<small>вбить график по датам: утро / день / вечер</small></span></button>
-          <button type="button" onClick={() => { closeSheet(); setPage('home') }}><span className="ic">📍</span><span>Найти окно для встречи<small>на главной — выбрать и забить</small></span></button>
-        </div>
-      </>
-    )
-  }
-
   if (sheet.type === 'rule') {
     return (
       <>
-        <h3>{sheet.rule ? 'Изменить' : 'Добавить'}<small>появится у всех сразу после сохранения</small></h3>
+        <h3>{sheet.rule ? 'Изменить занятость' : 'Отметить занятость'}<small>появится у всех сразу после сохранения</small></h3>
         <RuleForm rule={sheet.rule} kind={sheet.kind} />
       </>
     )
@@ -71,7 +60,13 @@ function SheetBody() {
   }
 
   if (sheet.type === 'gather') {
-    return <GatherForm initial={week} linked={data.group.tgLinked} onSend={async (note, from, weeks) => { await gather(note, from, weeks); closeSheet() }} onCopy={() => { toast('Сообщение скопировано') }} />
+    return <GatherForm linked={data.group.tgLinked} onSend={async (note, from, to) => { await gather(note, from, to); closeSheet() }} onCopy={() => { toast('Сообщение скопировано') }} />
+  }
+
+  if (sheet.type === 'person') {
+    const p = data.people.find((x) => x.id === sheet.id)
+    if (!p) return null
+    return <PersonView person={p} />
   }
   return null
 }
@@ -110,44 +105,54 @@ function ProfileForm({ name, color, note, onSave, onSwitch }: { name: string; co
   )
 }
 
-function GatherForm({ initial, linked, onSend, onCopy }: { initial: number; linked: boolean; onSend: (note: string, from: number, weeks: number) => Promise<void>; onCopy: () => void }) {
+function GatherForm({ linked, onSend, onCopy }: { linked: boolean; onSend: (note: string, from: string, to: string) => Promise<void>; onCopy: () => void }) {
   const [note, setNote] = useState('')
-  const [from, setFrom] = useState(initial)
-  const [to, setTo] = useState(initial)
+  const [from, setFrom] = useState<string | null>(todayKey())
+  const [to, setTo] = useState<string | null>(dkey(addDays(mondayOf(new Date()), 13)))
   const [busy, setBusy] = useState(false)
-  const weeks = to - from + 1
-  const period = weekLabel(from, weeks)
+  const end = to ?? from
+  const period = from && end ? rangeLabel(from, end) : 'выбери даты'
   const link = location.origin + location.pathname
-  const pick = (i: number) => {
-    if (i < from) setFrom(i)
-    else if (i > to) setTo(i)
-    else if (i === from && i === to) return
-    else if (i === from) setFrom(i + 1)
-    else if (i === to) setTo(i - 1)
-    else { setFrom(i); setTo(i) }
-  }
   return (
     <>
       <h3>Собираемся?<small>{period}</small></h3>
       <div className="form">
-        <div>
-          <label>Когда ищем окно</label>
-          <div className="chips">
-            {['эта неделя', 'следующая', 'через одну', 'через две'].map((l, i) => (
-              <button key={i} type="button" className={i >= from && i <= to ? 'on' : ''} onClick={() => pick(i)}>{l}<span className="dim"> {weekLabel(i)}</span></button>
-            ))}
-            <button type="button" className={from === 0 && to === 3 ? 'on' : ''} onClick={() => { setFrom(0); setTo(3) }}>Весь месяц</button>
-          </div>
-          <p className="hint">Тапни несколько недель подряд — сбор будет на весь период.</p>
-        </div>
+        <RangeCalendar from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
         <div><label htmlFor="g-note">Повод (необязательно)</label><input id="g-note" className="input" value={note} placeholder="Давно не виделись! Бар? Настолки?" onChange={(e) => setNote(e.target.value)} /></div>
-        <p className="hint">{linked
-          ? 'Бот напишет в беседу с кнопкой «отметить, когда могу» и будет обновлять сводку, пока все не нажмут «Я отметился».'
-          : 'Бот ещё не подключён к беседе: в разделе «Мы» есть инструкция. Пока можно отправить ссылку вручную.'}</p>
         {linked
-          ? <button type="button" className="btn" disabled={busy} onClick={() => { setBusy(true); void onSend(note.trim(), from, weeks).finally(() => setBusy(false)) }}>Отправить в беседу</button>
-          : <button type="button" className="btn dark" onClick={() => { void navigator.clipboard?.writeText(`${note.trim() ? note.trim() + '\n' : ''}Отметьте, когда можете (${period}): ${link}`); onCopy() }}>Скопировать сообщение для чата</button>}
+          ? <button type="button" className="btn" disabled={busy || !from} onClick={() => { if (!from || !end) return; setBusy(true); void onSend(note.trim(), from, end).finally(() => setBusy(false)) }}>Отправить в беседу</button>
+          : <button type="button" className="btn dark" disabled={!from} onClick={() => { void navigator.clipboard?.writeText(`${note.trim() ? note.trim() + '\n' : ''}Отметьте, когда можете (${period}): ${link}`); onCopy() }}>Скопировать сообщение для чата</button>}
+        {!linked && <p className="hint">Бот не подключён к беседе — инструкция в разделе «Мы».</p>}
       </div>
+    </>
+  )
+}
+
+/** Календарь другого человека: его неделя и правила, только просмотр. */
+function PersonView({ person }: { person: import('../lib/types').Person }) {
+  const { data, week, setWeek } = useReady()
+  const days = weekDays(week)
+  const rules = data.rules.filter((r) => r.personId === person.id)
+  const wdLabel = (a: number[]) => (a.length === 5 && a[0] === 1 && a[4] === 5 ? 'пн–пт' : a.length === 7 ? 'каждый день' : a.map((i) => DOW[i - 1].toLowerCase()).join(', '))
+  return (
+    <>
+      <h3><Avatar person={person} className="av inline" /> {person.name}<small>{person.note || 'про график не написано'} · {weekLabel(week)}</small></h3>
+      <div className="weeks">{['эта неделя', 'следующая', 'через одну', 'через две'].map((l, i) => <button key={i} type="button" className={week === i ? 'on' : ''} onClick={() => setWeek(i)}>{l}</button>)}</div>
+      <div className="mygrid">
+        <div />
+        {days.map((d) => <div key={d.key} className={`hd${d.today ? ' today' : ''}`}>{d.dow}<b>{d.num}</b></div>)}
+        {SLOTS.map((s) => (
+          <div key={s.id} className="contents">
+            <div className="hl">{s.label}</div>
+            {days.map((d) => { const e = entry(data, person.id, d, s.id); return <div key={d.key} className={`my ro${e ? ' busy ' + e.kind : ''}${slotPast(d, s.id) ? ' past' : ''}`}>{e ? e.title.slice(0, 7) : ''}</div> })}
+          </div>
+        ))}
+      </div>
+      <div className="legend"><span><i style={{ '--bg': '#FF4D3D' } as React.CSSProperties} />занят</span><span><i style={{ '--bg': '#FFB020' } as React.CSSProperties} />разово / смена</span><span><i style={{ '--bg': '#F4F5F9' } as React.CSSProperties} />свободен</span></div>
+      <h4 className="sub">Правила</h4>
+      {rules.length ? rules.map((r) => (
+        <div className="row" key={r.id}><span className="ic">{r.kind === 'recurring' ? '↻' : r.kind === 'oneoff' ? '✈' : '⇄'}</span><span className="nm">{r.title}<small>{r.kind === 'recurring' ? `каждую неделю · ${wdLabel(r.weekdays)}` : `${r.kind === 'shift' ? 'смена' : 'разово'} · ${r.dates.length === 1 ? fmtDayLong(r.dates[0]) : `${fmtDayLong(r.dates[0])} – ${fmtDayLong(r.dates[r.dates.length - 1])}`}`} · {ruleWhen(r)}</small></span></div>
+      )) : <p className="hint">Правил пока нет — только тапы в сетке.</p>}
     </>
   )
 }
