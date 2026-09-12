@@ -1,0 +1,14 @@
+{
+  "name": "Стрелка",
+  "short_name": "Стрелка",
+  "start_url": "/strelka/",
+  "scope": "/strelka/",
+  "display": "standalone",
+  "background_color": "#EEF0F7",
+  "theme_color": "#EEF0F7",
+  "icons": [
+    { "src": "/strelka/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/strelka/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/strelka/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
