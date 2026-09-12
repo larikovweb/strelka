@@ -10,6 +10,7 @@ export interface Person {
   note: string | null
   /** привязан к Telegram — бот может упомянуть */
   tg: boolean
+  avatar: string | null
 }
 
 export interface Rule {

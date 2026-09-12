@@ -66,6 +66,25 @@ function mention(p: { id: string; name: string }, tg: TgPerson[]): string {
   return t?.tgUserId ? `<a href="tg://user?id=${t.tgUserId}">${esc(p.name)}</a>` : esc(p.name)
 }
 
+/* ---------- аватар из Telegram → Storage ---------- */
+async function syncAvatar(personId: string, tgUserId: number) {
+  try {
+    const photos = await tgApi<{ total_count: number; photos: { file_id: string; file_unique_id: string; width: number }[][] }>('getUserProfilePhotos', { user_id: tgUserId, limit: 1 })
+    const sizes = photos.photos[0]
+    if (!sizes?.length) return
+    const pick = sizes.find((x) => x.width >= 160) ?? sizes[sizes.length - 1]
+    const file = await tgApi<{ file_path: string }>('getFile', { file_id: pick.file_id })
+    const res = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`)
+    if (!res.ok) return
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const path = `${personId}.jpg`
+    const { error } = await sb.storage.from('avatars').upload(path, bytes, { contentType: 'image/jpeg', upsert: true })
+    if (error) { console.error('avatar upload', error); return }
+    const url = `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/avatars/${path}?v=${pick.file_unique_id}`
+    await rpc('strelka_admin_set_avatar', { person_id: personId, url })
+  } catch (e) { console.error('avatar', e) }
+}
+
 /* ---------- сводка сбора ---------- */
 interface Gathering { id: string; group_id: string; week_start: string; weeks: number; date_from: string; date_to: string; time_from: number | null; time_to: number | null; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
 
@@ -199,11 +218,12 @@ interface TgUpdate {
 /** Участник по tg-аккаунту; если не привязан — автопривязка по уникальному имени. */
 async function resolvePerson(code: string, from: TgUser): Promise<{ personId: string } | null> {
   const p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: from.id })
-  if (p) return p
+  if (p) { void syncAvatar(p.personId, from.id); return p }
   const tg = await peopleTg(code)
   const same = tg.filter((x) => !x.tgUserId && x.name.trim().toLowerCase() === from.first_name.trim().toLowerCase())
   if (same.length !== 1) return null
   await rpc('strelka_admin_bind_tg', { code, person_id: same[0].id, tg_user_id: from.id, tg_username: from.username ?? null })
+  await syncAvatar(same[0].id, from.id)
   return { personId: same[0].id }
 }
 
@@ -292,6 +312,7 @@ async function handleAction(body: Record<string, unknown>) {
   if (a === 'auth') {
     const user = await verifyInitData(String(body.initData))
     const p = await rpc<{ code: string; personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: user.id })
+    if (p) await syncAvatar(p.personId, user.id)
     const sp = typeof body.startParam === 'string' ? body.startParam : ''
     let resolved = p?.code ?? code ?? null, weekStart: string | null = null
     if (sp.startsWith('g_')) {
@@ -303,6 +324,7 @@ async function handleAction(body: Record<string, unknown>) {
   if (a === 'bind') {
     const user = await verifyInitData(String(body.initData))
     await rpc('strelka_admin_bind_tg', { code, person_id: body.personId, tg_user_id: user.id, tg_username: user.username ?? null })
+    await syncAvatar(String(body.personId), user.id)
     return { ok: true }
   }
   if (!code) throw new Error('no_code')
@@ -313,6 +335,11 @@ async function handleAction(body: Record<string, unknown>) {
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
     const g = await startGathering(code, info.chatId, String(body.personId), String(body.from), String(body.to), body.note ? String(body.note) : null, num(body.timeFrom), num(body.timeTo))
     return { gatheringId: g.id }
+  }
+  if (a === 'sync_avatars') {
+    const tg = await peopleTg(code)
+    await Promise.all(tg.filter((x) => x.tgUserId).map((x) => syncAvatar(x.id, x.tgUserId!)))
+    return { ok: true }
   }
   if (a === 'cancel_gathering') {
     await cancelGathering(code, info.chatId, String(body.personId))

@@ -4,7 +4,7 @@ import { inTelegram } from '../lib/telegram'
 import { APP_VERSION } from '../lib/version'
 
 export function Us() {
-  const { data, me, code, openSheet, toast } = useReady()
+  const { data, me, code, openSheet, toast, syncAvatars } = useReady()
   const link = `${location.origin}${location.pathname}#/j/${code}`
   const copy = (text: string, msg: string) => { void navigator.clipboard?.writeText(text); toast(msg) }
 
@@ -37,6 +37,7 @@ export function Us() {
             </ol>
           )}
           {!data.group.tgLinked && <button type="button" className="btn ghost" onClick={() => copy(`/link ${code}`, 'Команда скопирована')}>Скопировать команду /link</button>}
+          {data.group.tgLinked && <button type="button" className="btn ghost" onClick={() => void syncAvatars()}>Обновить аватарки из Telegram</button>}
           {!inTelegram && <p className="hint">Внутри Telegram приложение открывается как мини-апп и само понимает, кто ты.</p>}
         </article>
 

@@ -66,6 +66,7 @@ interface Store {
   gather(note: string, from: string, to: string, timeFrom: number | null, timeTo: number | null): Promise<void>
   respond(): Promise<void>
   cancelGathering(): Promise<void>
+  syncAvatars(): Promise<void>
   openGathering: import('./types').Gathering | null
 }
 
@@ -248,6 +249,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (e) { toast((e as Error).message) }
   }, [code, me, announce, load, toast])
 
+  const syncAvatars = useCallback(async () => {
+    if (!code) return
+    try { await tg('sync_avatars', { code }); await load(code); toast('Аватарки обновлены') } catch (e) { toast((e as Error).message) }
+  }, [code, load, toast])
+
   const openGathering = useMemo(() => data?.gatherings.find((g) => !g.closedAt) ?? null, [data])
 
   const value = useMemo<Store>(() => ({
@@ -255,8 +261,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWeek: (w) => { setWeek(w); setSel(null) },
     setPage: (p) => { setPage(p); setSheet(null); window.scrollTo({ top: 0 }) },
     setSel, openSheet: setSheet, closeSheet: () => setSheet(null), toast,
-    pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather, respond, cancelGathering, openGathering,
-  }), [status, error, code, me, data, week, page, sel, sheet, toastMsg, toast, pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather, respond, cancelGathering, openGathering])
+    pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather, respond, cancelGathering, syncAvatars, openGathering,
+  }), [status, error, code, me, data, week, page, sel, sheet, toastMsg, toast, pickMe, forgetMe, refresh, toggleMe, book, cancelMeeting, updateMeeting, saveRule, deleteRule, updatePerson, gather, respond, cancelGathering, syncAvatars, openGathering])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
