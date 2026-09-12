@@ -35,7 +35,7 @@ begin
                            from strelka.overrides o where o.group_id = g.id and o.date >= current_date - 14), '[]'::jsonb),
     'meetings', coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'date',m.date,'slot',m.slot,'title',m.title,'place',m.place,'createdBy',m.created_by,'canceledAt',m.canceled_at) order by m.date)
                           from strelka.meetings m where m.group_id = g.id and m.date >= current_date - 60), '[]'::jsonb),
-    'gatherings', coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'weekStart',x.week_start,'initiatedBy',x.initiated_by,'note',x.note,'responded',x.responded,'weeks',x.weeks,'dateFrom',x.date_from,'dateTo',x.date_to,'closedAt',x.closed_at) order by x.created_at desc)
+    'gatherings', coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'weekStart',x.week_start,'initiatedBy',x.initiated_by,'note',x.note,'responded',x.responded,'weeks',x.weeks,'dateFrom',x.date_from,'dateTo',x.date_to,'timeFrom',x.time_from,'timeTo',x.time_to,'closedAt',x.closed_at) order by x.created_at desc)
                           from strelka.gatherings x where x.group_id = g.id and x.week_start >= current_date - 7), '[]'::jsonb)
   );
 end $$;
@@ -184,3 +184,20 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke execute on function public.strelka_admin_people_tg(text) from public, anon, authenticated;
 grant execute on function public.strelka_admin_people_tg(text) to service_role;
+
+-- Границы времени сбора (минуты от полуночи, null — без ограничения).
+alter table strelka.gatherings add column if not exists time_from int, add column if not exists time_to int;
+
+drop function if exists public.strelka_admin_open_gathering(text, date, date, uuid, text);
+create or replace function public.strelka_admin_open_gathering(code text, date_from date, date_to date, initiated_by uuid, note text, time_from int default null, time_to int default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare g uuid := strelka.gid(code); x strelka.gatherings; ws date := date_from - (extract(isodow from date_from)::int - 1);
+begin
+  if date_to < date_from then raise exception 'bad_range'; end if;
+  update strelka.gatherings set closed_at = now() where group_id = g and closed_at is null;
+  insert into strelka.gatherings (group_id, week_start, weeks, date_from, date_to, time_from, time_to, initiated_by, note)
+  values (g, ws, ceil((date_to - ws + 1) / 7.0)::int, date_from, date_to, time_from, time_to, initiated_by, note) returning * into x;
+  return to_jsonb(x);
+end $$;
+revoke execute on function public.strelka_admin_open_gathering(text, date, date, uuid, text, int, int) from public, anon, authenticated;
+grant execute on function public.strelka_admin_open_gathering(text, date, date, uuid, text, int, int) to service_role;

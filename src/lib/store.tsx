@@ -63,7 +63,7 @@ interface Store {
   saveRule(rule: Omit<Rule, 'id'> & { id?: string }): Promise<void>
   deleteRule(id: string): Promise<void>
   updatePerson(name: string, color: string, note: string | null): Promise<void>
-  gather(note: string, from: string, to: string): Promise<void>
+  gather(note: string, from: string, to: string, timeFrom: number | null, timeTo: number | null): Promise<void>
   respond(): Promise<void>
   cancelGathering(): Promise<void>
   openGathering: import('./types').Gathering | null
@@ -219,10 +219,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await run(() => api.updatePerson(code, me, name, color, note))
   }, [code, me, run])
 
-  const gather = useCallback(async (note: string, from: string, to: string) => {
+  const gather = useCallback(async (note: string, from: string, to: string, timeFrom: number | null, timeTo: number | null) => {
     if (!code || !me) return
     try {
-      await tg('gather', { code, personId: me, from, to, note })
+      await tg('gather', { code, personId: me, from, to, note, timeFrom, timeTo })
       announce(); await load(code)
       toast('Отправили в беседу')
     } catch (e) { toast((e as Error).message) }

@@ -192,7 +192,10 @@ h1,h2,h3{text-wrap:balance}
 
 /* calendar */
 .cal{display:flex;flex-direction:column;gap:14px}
-.cal-title{font-weight:800;font-size:14px;margin-bottom:6px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cal-head button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:18px;line-height:1;padding:0;color:var(--ink)}
+.cal-head button:disabled{opacity:.3}
+.cal-title{font-weight:800;font-size:14px}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px 0}
 .cal-dow{text-align:center;font-size:10px;font-weight:700;color:var(--mute);text-transform:uppercase;padding-bottom:4px}
 .cal-day{height:38px;border:0;background:transparent;border-radius:0;font-weight:700;font-size:14px;color:var(--ink);padding:0;position:relative}

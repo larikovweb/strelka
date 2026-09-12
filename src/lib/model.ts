@@ -111,9 +111,25 @@ export function meetTier(wd: number, slot: SlotId): number {
   return 99
 }
 
-/** Кандидаты на встречу: без утра, по числу свободных, затем по удобству слота, затем ближайшие. */
+/** Слот попадает в границы времени сбора, если пересекается с ними хотя бы на час. */
+export function slotFits(slot: SlotId, timeFrom: number | null, timeTo: number | null): boolean {
+  const [s, e] = SLOT_RANGE[slot]
+  return Math.min(e, timeTo ?? 1440) - Math.max(s, timeFrom ?? 0) >= 60
+}
+
+export function timeLabel(timeFrom: number | null, timeTo: number | null): string {
+  if (timeFrom != null && timeTo != null) return `${fmtMin(timeFrom)}–${fmtMin(timeTo)}`
+  if (timeFrom != null) return `с ${fmtMin(timeFrom)}`
+  if (timeTo != null) return `до ${fmtMin(timeTo)}`
+  return ''
+}
+
+/** Кандидаты на встречу: без утра (если не попросили явно), в границах времени открытого сбора, по числу свободных, удобству слота, ближайшие. */
 export function rank(state: GroupState, offset: number): Cell[] {
-  const all = weekCells(state, offset).flat().filter((c) => !c.past && c.slot.id !== 'm')
+  const g = state.gatherings.find((x) => !x.closedAt)
+  const tf = g?.timeFrom ?? null, tt = g?.timeTo ?? null
+  const inRange = (c: Cell) => !g || (c.day.key >= g.dateFrom && c.day.key <= g.dateTo)
+  const all = weekCells(state, offset).flat().filter((c) => !c.past && (c.slot.id !== 'm' || tf != null) && (!inRange(c) || slotFits(c.slot.id, tf, tt)))
   return all.sort((a, b) => b.n - a.n || meetTier(a.day.wd, a.slot.id) - meetTier(b.day.wd, b.slot.id) || a.day.key.localeCompare(b.day.key) || SLOT_ORDER[a.slot.id] - SLOT_ORDER[b.slot.id])
 }
 

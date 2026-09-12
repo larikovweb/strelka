@@ -53,7 +53,21 @@ export function rangeLabel(from: string, to: string): string {
 }
 export function addDaysKey(key: string, n: number): string { return dkey(addDays(parse(key), n)) }
 
-export function windows(state: State, from: string, to: string): Win[] {
+const SLOT_BOUNDS: Record<SlotId, [number, number]> = { m: [360, 720], d: [720, 1080], e: [1080, 1440] }
+/** Слот попадает в границы времени сбора, если пересекается с ними хотя бы на час. */
+export function slotFits(slot: SlotId, timeFrom: number | null, timeTo: number | null): boolean {
+  const [s, e] = SLOT_BOUNDS[slot]
+  return Math.min(e, timeTo ?? 1440) - Math.max(s, timeFrom ?? 0) >= 60
+}
+export const fmtMin = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+export function timeLabel(timeFrom: number | null, timeTo: number | null): string {
+  if (timeFrom != null && timeTo != null) return `${fmtMin(timeFrom)}–${fmtMin(timeTo)}`
+  if (timeFrom != null) return `с ${fmtMin(timeFrom)}`
+  if (timeTo != null) return `до ${fmtMin(timeTo)}`
+  return ''
+}
+
+export function windows(state: State, from: string, to: string, timeFrom: number | null = null, timeTo: number | null = null): Win[] {
   const today = dkey(todayMsk())
   const out: Win[] = []
   for (let d = parse(from); d <= parse(to); d = addDays(d, 1)) {
@@ -61,7 +75,8 @@ export function windows(state: State, from: string, to: string): Win[] {
     if (dateKey < today) continue
     const wd = ((d.getUTCDay() + 6) % 7) + 1
     for (const slot of SLOTS) {
-      if (slot === 'm') continue // утром не встречаемся
+      if (slot === 'm' && timeFrom == null) continue // утром не встречаемся, если явно не попросили
+      if (!slotFits(slot, timeFrom, timeTo)) continue
       const free = state.people.filter((p) => !isBusy(state, p.id, dateKey, wd, slot))
       const busy = state.people.filter((p) => !free.includes(p))
       out.push({ date: dateKey, slot, free, busy, n: free.length })

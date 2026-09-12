@@ -1,7 +1,7 @@
 // Стрелка · Telegram-бот и мост для Mini App.
 // Вебхук Telegram (заголовок X-Telegram-Bot-Api-Secret-Token) и JSON-действия из приложения ({action: ...}).
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { type State, SLOT_HOURS, SLOT_LABEL, addDaysKey, dkey, fmtDay, fmtDayLong, rangeLabel, todayMsk, weekStartKey, winLabel, windows } from './model.ts'
+import { type State, SLOT_HOURS, SLOT_LABEL, addDaysKey, dkey, fmtDay, fmtDayLong, rangeLabel, timeLabel, todayMsk, weekStartKey, winLabel, windows } from './model.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const HOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
@@ -67,17 +67,18 @@ function mention(p: { id: string; name: string }, tg: TgPerson[]): string {
 }
 
 /* ---------- сводка сбора ---------- */
-interface Gathering { id: string; group_id: string; week_start: string; weeks: number; date_from: string; date_to: string; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
+interface Gathering { id: string; group_id: string; week_start: string; weeks: number; date_from: string; date_to: string; time_from: number | null; time_to: number | null; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
 
 function summary(st: State, g: Gathering, tg: TgPerson[]): string {
   const total = st.people.length
   const by = st.people.find((p) => p.id === g.initiated_by)
   const responded = st.people.filter((p) => g.responded.includes(p.id))
   const waiting = st.people.filter((p) => !g.responded.includes(p.id))
-  const wins = windows(st, g.date_from, g.date_to)
+  const wins = windows(st, g.date_from, g.date_to, g.time_from, g.time_to)
   const all = wins.filter((w) => w.n === total).sort((a, b) => a.date.localeCompare(b.date))
+  const tl = timeLabel(g.time_from, g.time_to)
   const lines = [
-    `📣 <b>Собираемся?</b> ${by ? esc(by.name) + ' предлагает' : 'Предложение'} встретиться: <b>${rangeLabel(g.date_from, g.date_to)}</b>.`,
+    `📣 <b>Собираемся?</b> ${by ? esc(by.name) + ' предлагает' : 'Предложение'} встретиться: <b>${rangeLabel(g.date_from, g.date_to)}${tl ? `, ${tl}` : ''}</b>.`,
     g.note ? `<i>${esc(g.note)}</i>` : '',
     '',
     responded.length ? `Отметились: ${responded.map((p) => esc(p.name) + ' ✓').join(' · ')}` : 'Пока никто не отметился.',
@@ -103,7 +104,7 @@ async function postGathering(code: string, g: Gathering, chatId: number) {
   }
   // все отметились → отдельное сообщение один раз
   if (st.people.every((p) => g.responded.includes(p.id)) && !g.all_notified_at) {
-    const wins = windows(st, g.date_from, g.date_to), total = st.people.length
+    const wins = windows(st, g.date_from, g.date_to, g.time_from, g.time_to), total = st.people.length
     const all = wins.filter((w) => w.n === total).sort((a, b) => a.date.localeCompare(b.date))
     const text2 = all.length
       ? `✅ Все отметились! Окно для всех: <b>${winLabel(all[0])}</b>${all.length > 1 ? ` (ещё: ${all.slice(1, 4).map(winLabel).join(', ')})` : ''}. Забивайте в приложении.`
@@ -126,8 +127,8 @@ async function cancelGathering(code: string, chatId: number, byPersonId: string 
   return true
 }
 
-async function startGathering(code: string, chatId: number, initiatedBy: string | null, from: string, to: string, note: string | null) {
-  const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, date_from: from, date_to: to, initiated_by: initiatedBy, note: note || null })
+async function startGathering(code: string, chatId: number, initiatedBy: string | null, from: string, to: string, note: string | null, timeFrom: number | null = null, timeTo: number | null = null) {
+  const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, date_from: from, date_to: to, initiated_by: initiatedBy, note: note || null, time_from: timeFrom, time_to: timeTo })
   // инициатор сам ещё не отметился — но его правила уже учтены; считаем, что он «в курсе»
   const g2 = initiatedBy ? await rpc<Gathering>('strelka_admin_gathering_update', { gathering_id: g.id, add_responded: initiatedBy }) : g
   await postGathering(code, g2, chatId)
@@ -309,7 +310,8 @@ async function handleAction(body: Record<string, unknown>) {
   if (!info?.chatId) throw new Error('Бот не подключён к беседе — см. раздел «Мы»')
 
   if (a === 'gather') {
-    const g = await startGathering(code, info.chatId, String(body.personId), String(body.from), String(body.to), body.note ? String(body.note) : null)
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+    const g = await startGathering(code, info.chatId, String(body.personId), String(body.from), String(body.to), body.note ? String(body.note) : null, num(body.timeFrom), num(body.timeTo))
     return { gatheringId: g.id }
   }
   if (a === 'cancel_gathering') {

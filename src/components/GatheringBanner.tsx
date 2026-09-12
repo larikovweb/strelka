@@ -1,5 +1,6 @@
 import { rangeLabel, weekOffsetOf } from '../lib/dates'
 import { useReady } from '../lib/store'
+import { timeLabel } from '../lib/model'
 
 /** Баннер открытого сбора: кто отметился, кнопка «Я отметился». */
 export function GatheringBanner({ where }: { where: 'home' | 'sched' }) {
@@ -10,7 +11,7 @@ export function GatheringBanner({ where }: { where: 'home' | 'sched' }) {
   return (
     <div className={`banner${meDone ? ' done' : ''}`}>
       <div className="banner-text">
-        <b><span className="dot" />Идёт сбор: {rangeLabel(g.dateFrom, g.dateTo)}</b>
+        <b><span className="dot" />Идёт сбор: {rangeLabel(g.dateFrom, g.dateTo)}{timeLabel(g.timeFrom, g.timeTo) && `, ${timeLabel(g.timeFrom, g.timeTo)}`}</b>
         <span>{waiting.length ? `Отметились ${g.responded.length} из ${data.people.length}, ждём: ${waiting.map((p) => p.name).join(', ')}.` : 'Все отметились — выбирайте окно.'}</span>
       </div>
       <div className="banner-actions">

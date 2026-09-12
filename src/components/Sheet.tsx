@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DOW, SLOT, SLOTS, addDays, dkey, fmtDayLong, mondayOf, rangeLabel, slotPast, todayKey, weekDays, weekLabel } from '../lib/dates'
-import { entry, ruleWhen } from '../lib/model'
+import { entry, ruleWhen, timeLabel } from '../lib/model'
 import { Avatar } from './Avatar'
 import { RangeCalendar } from './RangeCalendar'
 import { cellById } from '../lib/model'
@@ -60,7 +60,7 @@ function SheetBody() {
   }
 
   if (sheet.type === 'gather') {
-    return <GatherForm linked={data.group.tgLinked} onSend={async (note, from, to) => { await gather(note, from, to); closeSheet() }} onCopy={() => { toast('Сообщение скопировано') }} />
+    return <GatherForm linked={data.group.tgLinked} onSend={async (note, from, to, tf, tt) => { await gather(note, from, to, tf, tt); closeSheet() }} onCopy={() => { toast('Сообщение скопировано') }} />
   }
 
   if (sheet.type === 'person') {
@@ -105,23 +105,45 @@ function ProfileForm({ name, color, note, onSave, onSwitch }: { name: string; co
   )
 }
 
-function GatherForm({ linked, onSend, onCopy }: { linked: boolean; onSend: (note: string, from: string, to: string) => Promise<void>; onCopy: () => void }) {
+const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0) }
+type TimeMode = 'any' | 'from' | 'to' | 'both'
+
+function GatherForm({ linked, onSend, onCopy }: { linked: boolean; onSend: (note: string, from: string, to: string, timeFrom: number | null, timeTo: number | null) => Promise<void>; onCopy: () => void }) {
   const [note, setNote] = useState('')
   const [from, setFrom] = useState<string | null>(todayKey())
   const [to, setTo] = useState<string | null>(dkey(addDays(mondayOf(new Date()), 13)))
+  const [mode, setMode] = useState<TimeMode>('any')
+  const [tFrom, setTFrom] = useState('18:00')
+  const [tTo, setTTo] = useState('23:00')
   const [busy, setBusy] = useState(false)
   const end = to ?? from
-  const period = from && end ? rangeLabel(from, end) : 'выбери даты'
+  const timeFrom = mode === 'from' || mode === 'both' ? toMin(tFrom) : null
+  const timeTo = mode === 'to' || mode === 'both' ? toMin(tTo) : null
+  const timeOk = mode !== 'both' || toMin(tTo) > toMin(tFrom)
+  const period = from && end ? rangeLabel(from, end) + (timeLabel(timeFrom, timeTo) ? `, ${timeLabel(timeFrom, timeTo)}` : '') : 'выбери даты'
   const link = location.origin + location.pathname
   return (
     <>
       <h3>Собираемся?<small>{period}</small></h3>
       <div className="form">
         <RangeCalendar from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
+        <div>
+          <label>Время</label>
+          <div className="chips">
+            {([['any', 'Любое'], ['from', 'С…'], ['to', 'До…'], ['both', 'С… до…']] as [TimeMode, string][]).map(([k, l]) => <button key={k} type="button" className={mode === k ? 'on' : ''} onClick={() => setMode(k)}>{l}</button>)}
+          </div>
+          {mode !== 'any' && (
+            <div className="dates" style={{ marginTop: 8 }}>
+              {(mode === 'from' || mode === 'both') && <input className="input" type="time" step={900} value={tFrom} onChange={(e) => setTFrom(e.target.value)} aria-label="С" />}
+              {(mode === 'to' || mode === 'both') && <input className="input" type="time" step={900} value={tTo} onChange={(e) => setTTo(e.target.value)} aria-label="До" />}
+            </div>
+          )}
+          {!timeOk && <p className="hint">«До» должно быть позже «с».</p>}
+        </div>
         <div><label htmlFor="g-note">Повод (необязательно)</label><input id="g-note" className="input" value={note} placeholder="Давно не виделись! Бар? Настолки?" onChange={(e) => setNote(e.target.value)} /></div>
         {linked
-          ? <button type="button" className="btn" disabled={busy || !from} onClick={() => { if (!from || !end) return; setBusy(true); void onSend(note.trim(), from, end).finally(() => setBusy(false)) }}>Отправить в беседу</button>
-          : <button type="button" className="btn dark" disabled={!from} onClick={() => { void navigator.clipboard?.writeText(`${note.trim() ? note.trim() + '\n' : ''}Отметьте, когда можете (${period}): ${link}`); onCopy() }}>Скопировать сообщение для чата</button>}
+          ? <button type="button" className="btn" disabled={busy || !from || !timeOk} onClick={() => { if (!from || !end) return; setBusy(true); void onSend(note.trim(), from, end, timeFrom, timeTo).finally(() => setBusy(false)) }}>Отправить в беседу</button>
+          : <button type="button" className="btn dark" disabled={!from || !timeOk} onClick={() => { void navigator.clipboard?.writeText(`${note.trim() ? note.trim() + '\n' : ''}Отметьте, когда можете (${period}): ${link}`); onCopy() }}>Скопировать сообщение для чата</button>}
         {!linked && <p className="hint">Бот не подключён к беседе — инструкция в разделе «Мы».</p>}
       </div>
     </>

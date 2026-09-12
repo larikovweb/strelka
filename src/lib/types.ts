@@ -48,6 +48,8 @@ export interface Gathering {
   weeks: number
   dateFrom: string
   dateTo: string
+  timeFrom: number | null
+  timeTo: number | null
   initiatedBy: string | null
   note: string | null
   responded: string[]
