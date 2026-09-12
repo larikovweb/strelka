@@ -1,8 +1,9 @@
-import { DOW, SLOTS, fmtDayLong, slotPast, weekDays, weekLabel } from '../lib/dates'
+import { DOW, SLOTS, fmtDayLong, slotPast, weekDays } from '../lib/dates'
 import { entry, ruleWhen } from '../lib/model'
 import { useReady } from '../lib/store'
 import { WeekTabs } from '../components/WeekTabs'
 import { GatheringBanner } from '../components/GatheringBanner'
+import { WeekNav } from '../components/WeekNav'
 
 const ICON = { recurring: '↻', oneoff: '✈', shift: '⇄' } as const
 
@@ -22,7 +23,7 @@ export function Schedule() {
       <GatheringBanner where="sched" />
       <div className="sched">
         <article className="card">
-          <h2>Быстро по неделе<small>{weekLabel(week)} · тап — занят / свободен</small></h2>
+          <h2 className="nowrap">Быстро по неделе<WeekNav /></h2>
           <div className="mygrid">
             <div />
             {days.map((d) => <div key={d.key} className={`hd${d.today ? ' today' : ''}${inG(d.key) ? ' ing' : ''}`}>{d.dow}<b>{d.num}</b></div>)}
@@ -37,10 +38,11 @@ export function Schedule() {
             ))}
           </div>
           <div className="legend"><span><i style={{ '--bg': '#FF4D3D' } as React.CSSProperties} />занят</span><span><i style={{ '--bg': '#FFB020' } as React.CSSProperties} />разово / смена</span><span><i style={{ '--bg': '#F4F5F9' } as React.CSSProperties} />свободен</span>{openGathering && <span><i style={{ '--bg': '#FFE3DF' } as React.CSSProperties} />дни сбора</span>}</div>
+          <p className="hint">Тап по клетке — занят / свободен.</p>
         </article>
 
         <article className="card">
-          <h2>Мои правила<small>{mine.length ? `${mine.length} шт.` : 'пока пусто'}</small></h2>
+          <h2>Мои правила<small>{mine.length ? 'тап — изменить или удалить' : 'пока пусто'}</small></h2>
           {mine.map((r) => (
             <button key={r.id} type="button" className="row rowbtn" onClick={() => openSheet({ type: 'rule', rule: r })}>
               <span className="ic">{ICON[r.kind]}</span>

@@ -7,6 +7,7 @@ import { DetailList } from '../components/DetailList'
 import { WeekTabs } from '../components/WeekTabs'
 import { burst } from '../components/confetti'
 import { GatheringBanner } from '../components/GatheringBanner'
+import { WeekNav } from '../components/WeekNav'
 
 function heat(n: number, total: number, booked: boolean): [string, string] {
   if (booked) return ['#10131A', '#fff']
@@ -71,7 +72,7 @@ export function Home() {
         </article>
 
         <article className="card heatcard">
-          <h2>Вся неделя<small>сколько свободны</small></h2>
+          <h2 className="nowrap">Вся неделя<WeekNav /></h2>
           <div className="hgrid">
             <div />
             {days.map((d) => <div key={d.key} className={`hd${d.today ? ' today' : ''}${inG(d.key) ? ' ing' : ''}`}>{d.dow}<b>{d.num}</b></div>)}

@@ -104,6 +104,19 @@ async function postGathering(code: string, g: Gathering, chatId: number) {
   }
 }
 
+async function cancelGathering(code: string, chatId: number, byPersonId: string | null) {
+  const g = await rpc<Gathering | null>('strelka_admin_open_gathering_of', { code })
+  if (!g) return false
+  await rpc('strelka_admin_gathering_update', { gathering_id: g.id, close: true })
+  const st = await state(code)
+  const by = st.people.find((p) => p.id === byPersonId)
+  const text = `❌ <b>Сбор отменён</b>${by ? ` — ${esc(by.name)}` : ''}. Период: ${rangeLabel(g.date_from, g.date_to)}.`
+  if (g.tg_message_id) {
+    try { await tgApi('editMessageText', { chat_id: chatId, message_id: g.tg_message_id, text, parse_mode: 'HTML' }) } catch { await tgApi('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' }) }
+  } else await tgApi('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' })
+  return true
+}
+
 async function startGathering(code: string, chatId: number, initiatedBy: string | null, from: string, to: string, note: string | null) {
   const g = await rpc<Gathering>('strelka_admin_open_gathering', { code, date_from: from, date_to: to, initiated_by: initiatedBy, note: note || null })
   // инициатор сам ещё не отметился — но его правила уже учтены; считаем, что он «в курсе»
@@ -145,6 +158,11 @@ async function handleUpdate(u: TgUpdate) {
     const g = await rpc<{ id: string; code: string; name: string } | null>('strelka_admin_group_by_chat', { chat_id: chatId })
     if (!g) { await tgApi('sendMessage', { chat_id: chatId, text: 'Чат ещё не привязан: напиши /link <код> (код — в разделе «Мы» приложения).' }); return }
     const p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: m.from.id })
+    if (/^(отмена|cancel)$/i.test(args.trim())) {
+      const ok = await cancelGathering(g.code, chatId, p?.personId ?? null)
+      if (!ok) await tgApi('sendMessage', { chat_id: chatId, text: 'Открытого сбора нет.' })
+      return
+    }
     // /strelka [след] [месяц] [повод]: по умолчанию — с сегодня до конца следующей недели
     const next = /\bслед\w*|\bnext\b/i.test(args)
     const month = /\bмесяц\b|\bmonth\b/i.test(args)
@@ -185,6 +203,10 @@ async function handleAction(body: Record<string, unknown>) {
   if (a === 'gather') {
     const g = await startGathering(code, info.chatId, String(body.personId), String(body.from), String(body.to), body.note ? String(body.note) : null)
     return { gatheringId: g.id }
+  }
+  if (a === 'cancel_gathering') {
+    await cancelGathering(code, info.chatId, String(body.personId))
+    return { ok: true }
   }
   if (a === 'touch') {
     const g = await rpc<Gathering | null>('strelka_admin_open_gathering_of', { code })
