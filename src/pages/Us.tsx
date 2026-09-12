@@ -1,6 +1,7 @@
 import { useReady } from '../lib/store'
 import { Avatar } from '../components/Avatar'
 import { inTelegram } from '../lib/telegram'
+import { APP_VERSION } from '../lib/version'
 
 export function Us() {
   const { data, me, code, openSheet, toast } = useReady()
@@ -44,6 +45,7 @@ export function Us() {
           <div className="row"><span className="nm">Слоты дня<small>утро 6–12 · день 12–18 · вечер 18–24</small></span></div>
           <div className="row"><span className="nm">Правила<small>повторяющиеся — по дням недели; разовые и смены — по датам; тап в сетке перекрывает правило на один слот</small></span></div>
           <div className="row"><span className="nm">Окно для всех<small>слот, где никто не отметил занятость</small></span></div>
+          <div className="row"><span className="nm">Версия<small>{APP_VERSION}</small></span><button type="button" className="mini" onClick={() => location.reload()}>Обновить</button></div>
         </article>
       </div>
     </>

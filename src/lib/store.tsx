@@ -4,6 +4,7 @@ import { weekOffsetOf } from './dates'
 import { toggleValue } from './model'
 import { supabase } from './supabase'
 import { inTelegram, tgApp } from './telegram'
+import { checkForUpdate } from './version'
 import type { Cell, Day, GroupState, Rule, SlotId } from './types'
 
 export type Page = 'home' | 'sched' | 'meet' | 'us'
@@ -104,6 +105,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // старт: Telegram Mini App или обычный веб
   useEffect(() => {
+    void checkForUpdate();
     (async () => {
       try {
         const hash = readHash()
@@ -140,7 +142,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const ch = supabase.channel(`strelka:${data.group.id}`, { config: { broadcast: { self: false } } })
     ch.on('broadcast', { event: 'changed' }, () => { void refresh() }).subscribe()
     channel.current = ch
-    const onVisible = () => { if (document.visibilityState === 'visible') void refresh() }
+    const onVisible = () => { if (document.visibilityState === 'visible') { void checkForUpdate(); void refresh() } }
     document.addEventListener('visibilitychange', onVisible)
     return () => { document.removeEventListener('visibilitychange', onVisible) }
   }, [data?.group.id, refresh])
