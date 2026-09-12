@@ -8,6 +8,8 @@ export interface Person {
   color: string
   sort: number
   note: string | null
+  /** привязан к Telegram — бот может упомянуть */
+  tg: boolean
 }
 
 export interface Rule {

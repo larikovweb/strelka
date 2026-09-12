@@ -17,7 +17,7 @@ export function Us() {
           {data.people.map((p) => (
             <div className="row" key={p.id}>
               <Avatar person={p} />
-              <button type="button" className="nm linkbtn" onClick={() => openSheet({ type: 'person', id: p.id })}>{p.name}{p.id === me && ' (ты)'}<small>{p.note || 'тап — календарь'}</small></button>
+              <button type="button" className="nm linkbtn" onClick={() => openSheet({ type: 'person', id: p.id })}>{p.name}{p.id === me && ' (ты)'}<small>{p.note || 'тап — календарь'}{p.tg ? ' · Telegram ✓' : ' · Telegram не привязан'}</small></button>
               {p.id === me ? <button type="button" className="mini" onClick={() => openSheet({ type: 'profile' })}>Профиль</button> : <span className="chev">›</span>}
             </div>
           ))}
@@ -28,7 +28,7 @@ export function Us() {
         <article className="card">
           <h2>Telegram<small>{data.group.tgLinked ? 'бот подключён к беседе' : 'бот не подключён'}</small></h2>
           {data.group.tgLinked ? (
-            <p className="hint">Кнопка «Собираемся?» на главной отправляет в беседу сбор с кнопкой «отметить». Бот сам обновляет сводку и пишет, когда все ответили и когда встреча забита.</p>
+            <p className="hint">Кнопка «Собираемся?» на главной отправляет в беседу сбор с кнопкой «отметить». Бот сам обновляет сводку, тегает тех, кто ещё не отметился, и пишет, когда все ответили и когда встреча забита. Привязка к Telegram происходит при первом открытии мини-аппа из беседы.</p>
           ) : (
             <ol className="steps">
               <li>Добавьте бота <b>@{import.meta.env.VITE_BOT_USERNAME || 'strelka_bot'}</b> в беседу.</li>

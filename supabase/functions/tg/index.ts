@@ -57,10 +57,19 @@ const keyboard = (gatheringId: string | null, code: string, weekStart: string) =
   inline_keyboard: [[{ text: '📝 Отметить, когда могу', url: openLink(gatheringId, code, weekStart) }]],
 })
 
+/* ---------- упоминания ---------- */
+interface TgPerson { id: string; name: string; tgUserId: number | null; tgUsername: string | null }
+const peopleTg = (code: string) => rpc<TgPerson[]>('strelka_admin_people_tg', { code })
+/** Имя с упоминанием, если человек привязан к Telegram (упоминание по id работает и без username). */
+function mention(p: { id: string; name: string }, tg: TgPerson[]): string {
+  const t = tg.find((x) => x.id === p.id)
+  return t?.tgUserId ? `<a href="tg://user?id=${t.tgUserId}">${esc(p.name)}</a>` : esc(p.name)
+}
+
 /* ---------- сводка сбора ---------- */
 interface Gathering { id: string; group_id: string; week_start: string; weeks: number; date_from: string; date_to: string; initiated_by: string | null; note: string | null; responded: string[]; tg_message_id: number | null; all_notified_at: string | null; closed_at: string | null }
 
-function summary(st: State, g: Gathering): string {
+function summary(st: State, g: Gathering, tg: TgPerson[]): string {
   const total = st.people.length
   const by = st.people.find((p) => p.id === g.initiated_by)
   const responded = st.people.filter((p) => g.responded.includes(p.id))
@@ -72,7 +81,7 @@ function summary(st: State, g: Gathering): string {
     g.note ? `<i>${esc(g.note)}</i>` : '',
     '',
     responded.length ? `Отметились: ${responded.map((p) => esc(p.name) + ' ✓').join(' · ')}` : 'Пока никто не отметился.',
-    waiting.length ? `Ждём: ${waiting.map((p) => esc(p.name)).join(', ')}` : '<b>Все отметились!</b>',
+    waiting.length ? `Ждём: ${waiting.map((p) => mention(p, tg)).join(', ')}` : '<b>Все отметились!</b>',
     '',
   ]
   if (all.length) lines.push(`🟢 Окна для всех: ${all.slice(0, 8).map((w) => `<b>${winLabel(w)}</b>`).join(', ')}${all.length > 8 ? ` и ещё ${all.length - 8}` : ''}`)
@@ -85,7 +94,7 @@ function summary(st: State, g: Gathering): string {
 
 async function postGathering(code: string, g: Gathering, chatId: number) {
   const st = await state(code)
-  const text = summary(st, g)
+  const text = summary(st, g, await peopleTg(code))
   if (g.tg_message_id) {
     try { await tgApi('editMessageText', { chat_id: chatId, message_id: g.tg_message_id, text, parse_mode: 'HTML', reply_markup: keyboard(g.id, code, g.week_start) }) } catch (e) { if (!String(e).includes('not modified')) throw e }
   } else {
@@ -157,7 +166,16 @@ async function handleUpdate(u: TgUpdate) {
   if (cmd === '/strelka' || cmd === '/meet' || cmd === '/сбор') {
     const g = await rpc<{ id: string; code: string; name: string } | null>('strelka_admin_group_by_chat', { chat_id: chatId })
     if (!g) { await tgApi('sendMessage', { chat_id: chatId, text: 'Чат ещё не привязан: напиши /link <код> (код — в разделе «Мы» приложения).' }); return }
-    const p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: m.from.id })
+    let p = await rpc<{ personId: string } | null>('strelka_admin_person_by_tg', { tg_user_id: m.from.id })
+    if (!p) {
+      // автопривязка: имя в Telegram совпадает с единственным непривязанным участником
+      const tg = await peopleTg(g.code)
+      const same = tg.filter((x) => !x.tgUserId && x.name.trim().toLowerCase() === m.from!.first_name.trim().toLowerCase())
+      if (same.length === 1) {
+        await rpc('strelka_admin_bind_tg', { code: g.code, person_id: same[0].id, tg_user_id: m.from.id, tg_username: m.from.username ?? null })
+        p = { personId: same[0].id }
+      }
+    }
     if (/^(отмена|cancel)$/i.test(args.trim())) {
       const ok = await cancelGathering(g.code, chatId, p?.personId ?? null)
       if (!ok) await tgApi('sendMessage', { chat_id: chatId, text: 'Открытого сбора нет.' })

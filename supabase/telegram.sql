@@ -27,7 +27,7 @@ begin
   if g.id is null then raise exception 'bad_code'; end if;
   return jsonb_build_object(
     'group', jsonb_build_object('id', g.id, 'name', g.name, 'code', g.invite_code, 'tgLinked', g.tg_chat_id is not null),
-    'people', coalesce((select jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'color',p.color,'sort',p.sort,'note',p.note) order by p.sort)
+    'people', coalesce((select jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'color',p.color,'sort',p.sort,'note',p.note,'tg',p.tg_user_id is not null) order by p.sort)
                         from strelka.people p where p.group_id = g.id), '[]'::jsonb),
     'rules', coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'personId',r.person_id,'kind',r.kind,'title',r.title,'weekdays',r.weekdays,'dates',r.dates,'slots',r.slots,'startMin',r.start_min,'endMin',r.end_min) order by r.created_at)
                        from strelka.rules r where r.group_id = g.id), '[]'::jsonb),
@@ -175,3 +175,12 @@ begin
   values (g, pid, rule->>'kind', rule->>'title', v_wd, v_dates, v_slots, v_start, v_end) returning id into rid;
   return rid;
 end $$;
+
+-- Telegram-идентификаторы участников (только для бота).
+create or replace function public.strelka_admin_people_tg(code text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'tgUserId', p.tg_user_id, 'tgUsername', p.tg_username) order by p.sort), '[]'::jsonb)
+  from strelka.people p where p.group_id = strelka.gid(code)
+$$;
+revoke execute on function public.strelka_admin_people_tg(text) from public, anon, authenticated;
+grant execute on function public.strelka_admin_people_tg(text) to service_role;
